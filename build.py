@@ -80,14 +80,46 @@ def fetch_feed(feed):
         out.append({"src": feed["src"], "dept": feed.get("dept", ""), "title": title, "url": link, "dt": dt, "desc": desc})
     return out
 
+FEED_F = ROOT / "feed_cache.json"
+
+def _fetch_retry(fd, tries=3):
+    """抓取单个源:失败自动重试(间隔 6s、18s),Google News 偶发 503/429 时通常能恢复。"""
+    import time
+    last = None
+    for k in range(tries):
+        try: return fetch_feed(fd)
+        except Exception as e:
+            last = e
+            if k < tries - 1: time.sleep(6 * (3 ** k))
+    raise last
+
 def fetch_all():
-    items = []
+    """抓全部源。成功的源写入 feed_cache.json;最终失败的源回退用上一次成功的结果(随 Actions 缓存保留),
+    避免某个源临时 503 就把整类新闻(如路透)从页面上抹掉。"""
+    try: cache = json.loads(FEED_F.read_text(encoding="utf-8")) if FEED_F.exists() else {}
+    except Exception: cache = {}
+    items, failed = [], []
     for fd in CFG["feeds"]:
         try:
-            got = fetch_feed(fd); items += got
+            got = _fetch_retry(fd)
+            if not got and cache.get(fd["name"]): raise RuntimeError("返回 0 条(疑似异常空结果)")
+            items += got
+            cache[fd["name"]] = [dict(g, dt=g["dt"].isoformat()) for g in got]
             print(f"[ok]   {fd['name']}: {len(got)}")
         except Exception as e:
-            print(f"[fail] {fd['name']}: {e}")
+            old = cache.get(fd["name"]) or []
+            if old:
+                try:
+                    back = [dict(o, dt=datetime.fromisoformat(o["dt"])) for o in old]
+                    items += back
+                    print(f"[stale] {fd['name']}: {e} -> 回退使用上次成功结果 {len(back)} 条")
+                except Exception: print(f"[fail] {fd['name']}: {e}(缓存不可用)")
+            else:
+                print(f"[fail] {fd['name']}: {e}(没有可回退的缓存)")
+            failed.append(fd["name"])
+    try: FEED_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    except Exception as e: print("[feed cache save fail]", str(e)[:60])
+    if failed: print(f"[warn] {len(failed)} 个源最终失败: {', '.join(failed)}")
     return items
 
 # ---------- Google News 跳转链接 -> 原文直链(带缓存,失败回退) ----------
