@@ -291,5 +291,30 @@
   "https://feeds.bloomberg.com/technology/news.rss",
   "https://feeds.bloomberg.com/business/news.rss",
   "https://feeds.bloomberg.com/economics/news.rss"
- ]
+ ],
+ "alt_feeds": [
+  {
+   "name": "BBC",
+   "url": "https://feeds.bbci.co.uk/news/world/rss.xml"
+  },
+  {
+   "name": "BBC",
+   "url": "https://feeds.bbci.co.uk/news/business/rss.xml"
+  },
+  {
+   "name": "卫报",
+   "url": "https://www.theguardian.com/world/rss"
+  },
+  {
+   "name": "卫报",
+   "url": "https://www.theguardian.com/business/rss"
+  },
+  {
+   "name": "CNBC",
+   "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"
+  }
+ ],
+ "alt_match_hi": 0.3,
+ "alt_match_lo": 0.2,
+ "verify_model": "Qwen/Qwen3-8B"
 }

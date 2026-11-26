@@ -166,7 +166,8 @@ function renderHeadline(){
   const age=a=>a<1?Math.max(1,Math.round(a*60))+' 分钟前':Math.round(a*10)/10+' 小时前';
   const pick=i=>{const zh=i.zh||'',en=i.en||'';const main=zh||en||i.t;return {main,alt:bilingual?(main===zh?en:zh):''};};
   ol.innerHTML=rows.map(({h,i},k)=>{const x=pick(i);const gz=h.gist||'',ge=h.gist_en||'';
-    const gs=bilingual?[gz,ge].filter(Boolean):[gz||ge].filter(Boolean);
+    const pre=(g,l)=>(h.via?(l==='zh'?'据'+h.via+'报道:':'Per '+h.via+': '):'')+g;
+    const gs=bilingual?[gz&&pre(gz,'zh'),ge&&pre(ge,'en')].filter(Boolean):[gz?pre(gz,'zh'):(ge?pre(ge,'en'):'')].filter(Boolean);
     return `<li data-k="${k}" data-url="${esc(i.url)}"><span class="rk r${k+1}">${k+1}</span>
     <div class="tb"><span class="ti">${esc(x.main)}</span>${x.alt?`<span class="ti2">${esc(x.alt)}</span>`:''}${gs.map(g=>`<div class="gs">${esc(g)}</div>`).join('')}
     <div class="mt">${h.nsrc>1?h.nsrc+' 家报道 · ':''}${esc(SRC[i.src]?.label||i.src)} · ${age(h.age)}</div></div><span class="sc">${h.score}</span></li>`;}).join('');
@@ -208,9 +209,9 @@ function buildQueue(){
     let doZh=VM!=='en', doEn=VM!=='zh';
     if(VM==='both'&&zt===et){ if(langOf(zt)==='en') doZh=false; else doEn=false; }   // 只有一种语言时不重复读
     if(doZh){push('第'+(k+1)+'条,来自'+lab+'。','zh');push(zt,langOf(zt));
-      const g=gz||(!doEn?ge:''); if(g){push('大意:','zh');push(g,langOf(g));}}
+      const g=gz||(!doEn?ge:''); if(g){push(h.via?'据'+h.via+'报道:':'大意:','zh');push(g,langOf(g));}}
     if(doEn){push('Item '+(k+1)+', from '+lab+'.','en');push(et,langOf(et));
-      const g=ge||(!doZh?gz:''); if(g){push('Summary:','en');push(g,langOf(g));}}
+      const g=ge||(!doZh?gz:''); if(g){push(h.via?'According to '+h.via+':':'Summary:','en');push(g,langOf(g));}}
   });
   return {segs,total:rows.length};
 }

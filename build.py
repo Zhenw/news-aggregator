@@ -250,13 +250,13 @@ def _article_text(url):
     body = " ".join(p for p in paras if len(p) > 40)[:1800]
     return desc, body
 
-def _chat(prompt):
+def _chat(prompt, model=None, extra=None):
     """调用 OpenAI 兼容接口(OpenAI / Gemini 兼容端点均可)。空环境变量视为未设置;遇到 429/5xx 自动退避重试。"""
     import time
     key = os.environ["OPENAI_API_KEY"]
     base = (os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
-    model = os.environ.get("TRANSLATE_MODEL") or "gpt-4o-mini"
-    body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}).encode()
+    model = model or os.environ.get("TRANSLATE_MODEL") or "gpt-4o-mini"
+    body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2, **(extra or {})}).encode()
     last = None
     for attempt in range(4):
         req = urllib.request.Request(base + "/chat/completions", body, {"Content-Type": "application/json", "Authorization": "Bearer " + key})
@@ -320,6 +320,71 @@ def attach_descs(items):
         if d: it["desc"] = d; hit += 1
     print(f"attached official summaries to {hit} items")
 
+# ---------- 无法抓取的文章:借同一事件在其他媒体(BBC/卫报/CNBC)的公开 RSS 摘要补大意,并标注出处 ----------
+ALT_STOP = set("the and for with from that this has have will are was were its his her new says say after over into amid about than more most also but not can could would may how why who what".split())
+def _etok(t): return set(re.findall(r"[a-z0-9]{3,}", (t or "").lower())) - ALT_STOP
+
+def _first_para(raw):
+    m = re.search(r"<p[^>]*>(.*?)</p>", raw or "", re.S | re.I)
+    return m.group(1) if m else (raw or "")
+
+def fetch_alt_feeds():
+    out = []
+    for f in CFG.get("alt_feeds", []):
+        try:
+            req = urllib.request.Request(f["url"], headers={"User-Agent": BROWSER_UA})
+            with urllib.request.urlopen(req, timeout=20) as r: root = ET.fromstring(r.read())
+            n = 0
+            for el in root.iter("item"):
+                g = {strip_ns(c.tag): c for c in el}
+                t = clean_title((g["title"].text or "") if "title" in g else "")
+                raw = g["description"].text if "description" in g and g["description"].text else ""
+                dsc = clean_desc(_first_para(raw), t)
+                if t and _good(dsc): out.append({"name": f["name"], "t": t, "d": _cut(dsc, 320), "tk": _etok(t)}); n += 1
+            print(f"[ok]   alt feed {f['name']} ({f['url'].split('/')[-2] or f['url'][:30]}): {n}")
+        except Exception as e:
+            print("[alt feed fail]", f.get("name"), str(e)[:60])
+    return out
+
+def _same_event(a, b):
+    """让模型判断两条标题是不是同一个具体事件(不是同一话题)。只在相似度处于灰区时调用。
+    用 config 里的 verify_model(判断更准);该模型不可用时回退到默认模型。宁可漏判也不误配。"""
+    prompt = ("Two news headlines. Do they report the SAME specific news event? Different outlets often word the same event differently, "
+              "and one headline may cover several stories (a news digest) - if the core event of A is the same as B, answer yes. "
+              "Different aspects, reactions or related-but-separate events are NOT the same. "
+              'Reply with JSON only: {"same": true} or {"same": false}.\nA: ' + a + "\nB: " + b)
+    vm = CFG.get("verify_model") or ""
+    for model, extra in (([(vm, {"enable_thinking": False} if "Qwen3" in vm else {})] if vm else []) + [(None, None)]):
+        try:
+            out = _chat(prompt, model, extra)
+            return json.loads(re.search(r"\{.*\}", out, re.S).group(0)).get("same") is True
+        except Exception as e:
+            print("[same-event check fail]", model or "default", str(e)[:50])
+    return False
+
+def attach_alt(headline, items):
+    """头条里没有摘要的英文条目:到其他媒体的公开 RSS 里找同一事件的摘要。结果写入 it['desc'] / it['desc_via']。"""
+    by = {i["gid"]: i for i in items}
+    need = [by[h["gid"]] for h in headline if h["gid"] in by and not by[h["gid"]].get("desc") and not has_cjk(by[h["gid"]]["title"])]
+    if not need or not CFG.get("alt_feeds"): return
+    alts = fetch_alt_feeds()
+    if not alts: return
+    cache = json.loads(GIST_F.read_text(encoding="utf-8")) if GIST_F.exists() else {}
+    has_key = bool(os.environ.get("OPENAI_API_KEY")); hi, lo, hit = CFG.get("alt_match_hi", 0.3), CFG.get("alt_match_lo", 0.2), 0
+    for it in need:
+        ta = _etok(it["title"])
+        best = max(alts, key=lambda a: jacc(ta, a["tk"])); sc = jacc(ta, best["tk"])
+        ok = sc >= hi
+        if not ok and sc >= lo and has_key:
+            ck = "same:" + hashlib.sha1((it["title"] + "|" + best["t"]).encode()).hexdigest()[:16]
+            if ck not in cache: cache[ck] = _same_event(it["title"], best["t"])
+            ok = bool(cache[ck])
+        if ok:
+            it["desc"], it["desc_via"] = best["d"], best["name"]; hit += 1
+            print(f"[alt] {sc:.2f} {it['title'][:40]}  <-  {best['name']}: {best['t'][:44]}")
+    GIST_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    print(f"filled {hit}/{len(need)} headline items from other outlets")
+
 def make_gists(headline, items, demo=False):
     """TOP10 双语大意:gist(中文) + gist_en(英文)。没有足够原文时不让模型编造。"""
     by = {i["gid"]: i for i in items}
@@ -332,17 +397,19 @@ def make_gists(headline, items, demo=False):
             h["gist"] = "这是演示数据的大意:" + (it.get("zh") or it["title"]) + "。真实运行时这里会是根据原文提炼的两三句话摘要。"
             h["gist_en"] = "Demo summary: " + (it.get("en") or it["title"]) + ". In a real run this is a two-to-three sentence summary of the article."
             continue
-        ck = h["gid"] + ":v4"
+        ck = h["gid"] + ":v5"
         if ck in cache: h.update(cache[ck]); continue
         g = {"gist": "", "gist_en": ""}
         desc = body = ""
         try: desc, body = _article_text(it.get("link", it["url"]))
         except Exception as e: print("[gist fetch fail]", (it.get("zh") or it["title"])[:30], str(e)[:50])
         text = (desc + " " + body).strip()
-        if not _good(text): text = it.get("desc", "")      # 原文抓不到/太短时,用官方 RSS 摘要
+        via = ""
+        if not _good(text):
+            text = it.get("desc", ""); via = it.get("desc_via", "")      # 原文抓不到/太短时,用官方 RSS 摘要(或其他媒体的同事件摘要)
         if has_key and _good(text):
             try:
-                out = _chat("根据下面这条新闻的标题和正文片段,分别写中文和英文各2到3句话的大意(中文80到140字;英文40到70词),适合语音播报。"
+                out = _chat(("注意:下面的摘要来自" + via + "对同一事件的报道,不是这条新闻原稿;只概括摘要里有的信息,不要写成原稿内容。\n" if via else "") + "根据下面这条新闻的标题和正文片段,分别写中文和英文各2到3句话的大意(中文80到140字;英文40到70词),适合语音播报。"
                             "不要出现链接和特殊符号,不要编造原文没有的信息;信息不足时宁可写短一些,只概括已有信息。只输出JSON对象:{\"zh\":\"...\",\"en\":\"...\"}。\n"
                             "标题:" + it["title"] + "\n正文片段:" + text[:1500])
                 j = json.loads(re.search(r"\{.*\}", out, re.S).group(0))
@@ -355,6 +422,7 @@ def make_gists(headline, items, demo=False):
             else: g["gist_en"] = _cut(desc or text, 260)
         if g["gist"] and not has_cjk(g["gist"]): g["gist"] = ""          # 中文大意必须是中文
         if g["gist_en"] and has_cjk(g["gist_en"]): g["gist_en"] = ""     # 英文大意不能夹中文
+        if via and (g["gist"] or g["gist_en"]): g["via"] = via
         h.update(g)
         if g["gist"] or g["gist_en"]: cache[ck] = g
     GIST_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
@@ -402,7 +470,9 @@ def main():
         if "--no-resolve" not in sys.argv: items = resolve_links(items)
     for i in items: i["tags"] = tag_item(i)
     if not demo: attach_descs(items)
-    headline = make_gists(build_headline(items), items, demo)
+    headline = build_headline(items)
+    if not demo: attach_alt(headline, items)
+    headline = make_gists(headline, items, demo)
     data = [to_record(it, n) for n, it in enumerate(items)]
     tags = [{"k": k, "c": v["color"]} for k, v in CFG["tags"].items()] + [{"k": CFG["other_tag"]["name"], "c": CFG["other_tag"]["color"]}]
     boot = {"src": {k: {"label": v["label"], "color": v["color"]} for k, v in CFG["sources"].items()},
