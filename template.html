@@ -60,6 +60,20 @@ button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .hl.folded li.f{display:none}
 #hlmore{display:block;margin:8px auto 0}
 @media (max-width:640px){#sub,#live{font-size:11px}#sub{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}header.hc .tool{display:none}header.hc .tool.warn{display:inline}}
+#imp{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:14px}
+#imp h2{font-size:15px;margin:0 0 4px}#imp .sm{color:var(--muted);font-size:13px;margin:0 0 8px}
+#implist{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+@media (max-width:1000px){#implist{grid-template-columns:repeat(3,1fr)}}
+@media (max-width:640px){#implist{grid-template-columns:repeat(2,1fr);gap:6px}#imp{padding:8px 10px}.ic{padding:6px 8px}.ic .iv{font-size:18px}}
+.ic{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.ic .in{font-weight:600;font-size:14px}.ic .in small{color:var(--muted);font-weight:400;font-size:11px;margin-left:4px}
+.ic .iv{font-size:20px;font-weight:700;margin:2px 0}.ic .iv span{font-size:12px;font-weight:600;margin-left:4px}
+.ic.up .iv{color:#d9363e}.ic.dn .iv{color:#1d9e75}.ic.ne .iv{color:var(--muted)}
+.ic .ib{position:relative;height:6px;background:var(--line);border-radius:3px;margin:4px 0 6px}
+.ic .ib:after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--muted)}
+.ic .ib i{position:absolute;top:0;bottom:0;border-radius:3px}.ic.up .ib i{background:#d9363e}.ic.dn .ib i{background:#1d9e75}
+.ic .ir{font-size:12px}.ic .ir2{font-size:12px;color:var(--muted);margin-top:2px}
+#imp .dis{color:var(--muted);font-size:11px;margin-top:8px}
 </style>
 </head>
 <body>
@@ -78,6 +92,7 @@ button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 </header>
 <div id="bar" hidden><button id="pprev" aria-label="上一条">⏮</button><button id="pplay" aria-label="暂停">⏸</button><button id="pnext" aria-label="下一条">⏭</button><div class="tx"><b id="pt"></b><span class="sub" id="ps"></span></div><button id="pstop" aria-label="停止">✕</button></div>
 <main>
+  <section id="imp" hidden><h2>📊 品种影响指数 <span class="sub" id="impsub"></span></h2><div class="sm" id="impsum"></div><div id="implist"></div><div class="dis">由 AI 仅依据近 24 小时新闻标题自动打分(-5 利空 ~ +5 利好,红=利好、绿=利空),只反映消息面方向,不是价格预测,不构成投资建议。</div></section>
   <section class="hl" id="hl" hidden><h2>🔥 今日头条 <span class="sub" id="hlsub"></span></h2><ol id="hllist"></ol><button id="hlmore" class="chip" hidden></button></section>
   <div id="list"></div>
 </main>
@@ -87,7 +102,7 @@ const LS = {read:'nf_read', star:'nf_star', theme:'nf_theme'};
 const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch(e) { return []; } };
 const lsSet = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let SRC={}, TAGS=[], DATA=[], HEAD=[], META={};
+let SRC={}, TAGS=[], DATA=[], HEAD=[], META={}, IMP=null;
 let fOpen=innerWidth>640, hlOpen=false; const HL_FOLD=3;
 let selSrc=[], selTag=[], selMin=0, onlyStar=false, bilingual=(function(){try{return localStorage.getItem('nf_bi')!=='0'}catch(e){return true}})(), q='';
 const READ=new Set(lsGet(LS.read)), STAR=new Set(lsGet(LS.star));
@@ -174,6 +189,18 @@ document.getElementById('list').addEventListener('click',e=>{
   READ.add(gid);lsSet(LS.read,[...READ]);c.classList.add('read');
 });
 
+function renderImpact(){
+  const box=document.getElementById('imp');
+  if(!IMP||!IMP.items||!IMP.items.length){box.hidden=true;return;}
+  box.hidden=false;
+  document.getElementById('impsub').textContent=IMP.built+' · 基于 '+IMP.n+' 条';
+  document.getElementById('impsum').textContent=(IMP.summary||'')+((bilingual&&IMP.summary_en)?' / '+IMP.summary_en:'');
+  const lab=s=>s>=3?'强烈利好':s>=1?'偏利好':s<=-3?'强烈利空':s<=-1?'偏利空':'中性';
+  document.getElementById('implist').innerHTML=IMP.items.map(x=>{
+    const s=x.score,cls=s>0?'up':s<0?'dn':'ne',w=Math.abs(s)*10;
+    return '<div class="ic '+cls+'"><div class="in">'+esc(x.name)+'<small>'+esc(x.k)+'</small></div><div class="iv">'+(s>0?'+':'')+s+'<span>'+lab(s)+'</span></div><div class="ib"><i style="width:'+w+'%;'+(s<0?'right:50%':'left:50%')+'"></i></div><div class="ir">'+esc(x.zh)+'</div>'+((bilingual&&x.en)?'<div class="ir2">'+esc(x.en)+'</div>':'')+'</div>';
+  }).join('');
+}
 function renderHeadline(){
   const box=document.getElementById('hl'),ol=document.getElementById('hllist');
   const by=new Map(DATA.map(i=>[i.gid,i]));
@@ -285,15 +312,15 @@ document.getElementById('pprev').onclick=()=>{if(PL.on){const k=PL.segs[PL.n].k;
 if(window.speechSynthesis) speechSynthesis.onvoiceschanged=()=>{};
 document.getElementById('q').oninput=e=>{q=e.target.value;paintFToggle();render();};
 document.getElementById('star').onclick=()=>{onlyStar=!onlyStar;paintFilters();render();};
-document.getElementById('bi').onclick=()=>{bilingual=!bilingual;try{localStorage.setItem('nf_bi',bilingual?'1':'0')}catch(e){};paintFilters();render();renderHeadline();};
+document.getElementById('bi').onclick=()=>{bilingual=!bilingual;try{localStorage.setItem('nf_bi',bilingual?'1':'0')}catch(e){};paintFilters();render();renderHeadline();renderImpact();};
 
 const POLL_MS = 5*60*1000;          // 后台刷新间隔
 let lastBuilt='', pollTimer=null;
 function apply(b, notify){
   const old=new Set(DATA.map(i=>i.gid));
-  SRC=b.src;TAGS=b.tags;DATA=b.data;HEAD=b.headline;META=b.meta;lastBuilt=META.built;
+  SRC=b.src;TAGS=b.tags;DATA=b.data;HEAD=b.headline;IMP=b.impact||null;META=b.meta;lastBuilt=META.built;
   document.getElementById('sub').textContent='更新于 '+META.built+' · 共 '+META.n+' 条';
-  paintFilters();renderHeadline();render();
+  paintFilters();renderImpact();renderHeadline();render();
   if(notify){const n=DATA.filter(i=>!old.has(i.gid)).length;
     setLive(n?('✨ 新增 '+n+' 条'):'已是最新');}
 }

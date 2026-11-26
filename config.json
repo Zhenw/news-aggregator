@@ -336,5 +336,7 @@
  ],
  "alt_match_hi": 0.3,
  "alt_match_lo": 0.2,
- "verify_model": "Qwen/Qwen3-8B"
+ "verify_model": "Qwen/Qwen3-8B",
+ "impact_model": "Qwen/Qwen3-8B",
+ "impact_max_items": 70
 }

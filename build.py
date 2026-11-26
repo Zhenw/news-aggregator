@@ -433,6 +433,57 @@ def make_gists(headline, items, demo=False):
     GIST_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     return headline
 
+# ---------- 品种影响指数(模型只依据近24小时标题打分,不预测价格) ----------
+IMPACT_INST = [("USOIL", "美国原油", "US Crude Oil"), ("XAUUSD", "黄金", "Gold"), ("BTCUSD", "比特币", "Bitcoin"),
+               ("US500", "标普500", "S&P 500"), ("HK50", "恒生指数", "Hang Seng"), ("SSE", "上证指数", "Shanghai Composite")]
+
+def make_impact(items, headline, demo=False):
+    if demo or not os.environ.get("OPENAI_API_KEY"): return None
+    hg = {h["gid"] for h in headline}
+    pool = [it for it in items if NOW - it["dt"] <= timedelta(hours=24) and not LOWV.search(it["title"] + " " + it.get("zh", ""))]
+    pool.sort(key=lambda it: (it["gid"] not in hg, -it["dt"].timestamp()))
+    picked, gov = [], 0
+    for it in pool:                                   # 部委稿子多为例行通知,最多取 8 条
+        if it["src"] == "gov":
+            if gov >= 8: continue
+            gov += 1
+        picked.append(it)
+        if len(picked) >= CFG.get("impact_max_items", 70): break
+    if len(picked) < 8: return None
+    lines = []
+    for it in picked:                                 # 英文用原标题,避免翻译错误(如把 oil 译成铁矿石)带偏判断
+        age = round((NOW - it["dt"]).total_seconds() / 3600, 1)
+        lines.append("[%sh前] %s" % (age, it["title"]))
+    keys = ",".join(k for k, _, _ in IMPACT_INST)
+    prompt = ("你是金融新闻分析助手。下面是近24小时的新闻标题。请只依据这些标题,判断其对以下6个品种未来1到2天的消息面影响:"
+              "USOIL(美国原油WTI)、XAUUSD(黄金)、BTCUSD(比特币)、US500(标普500)、HK50(恒生指数)、SSE(上证指数)。\n"
+              "规则:score 为整数,范围 -5 到 5;正数=利好(有利于价格上行),负数=利空,0=标题里没有明显相关信息。\n"
+              "参考:原油——中东/红海/俄乌供应冲击、库存下降为利好,需求担忧、增产为利空;黄金——避险、降息预期、美元走弱为利好,加息/鹰派、美元走强为利空;"
+              "比特币——风险偏好和流动性改善为利好,紧缩、风险资产抛售、监管打压为利空;股指——经济与盈利、政策支持为利好,关税升级、利率预期偏鹰、科技股抛售为利空。\n"
+              "要求:1) 不要编造标题里没有的信息或具体价格;2) 每个品种的理由 zh 不超过40个汉字,en 不超过25个英文单词,必须点出具体是哪条消息;"
+              "3) 利好利空并存时给较小的分数;4) summary_zh/summary_en 各用一句话概括整体基调。\n"
+              "只输出JSON对象,格式:{\"summary_zh\":\"...\",\"summary_en\":\"...\",\"items\":{\"USOIL\":{\"score\":0,\"zh\":\"...\",\"en\":\"...\"},...}},"
+              "items 必须包含这些键:" + keys + "。\n新闻标题:\n" + "\n".join(lines))
+    attempts = [(CFG.get("impact_model") or None, {"enable_thinking": False, "temperature": 0.1, "max_tokens": 1500}), (None, {"temperature": 0.1, "max_tokens": 1500})]
+    for model, extra in attempts:
+        try:
+            out = _chat(prompt, model, extra)
+            j = json.loads(re.search(r"\{.*\}", out, re.S).group(0))
+            res = []
+            for k, zh_name, en_name in IMPACT_INST:
+                x = j["items"][k]
+                sc = max(-5, min(5, int(round(float(x["score"])))))
+                zh = str(x.get("zh", "")).strip(); en = str(x.get("en", "")).strip()
+                if not has_cjk(zh): zh = ""
+                if has_cjk(en): en = ""
+                res.append({"k": k, "name": zh_name, "name_en": en_name, "score": sc, "zh": zh, "en": en})
+            sz, se = str(j.get("summary_zh", "")).strip(), str(j.get("summary_en", "")).strip()
+            return {"built": NOW.strftime("%Y-%m-%d %H:%M"), "n": len(picked), "items": res,
+                    "summary": sz if has_cjk(sz) else "", "summary_en": se if not has_cjk(se) else ""}
+        except Exception as e:
+            print("[impact fail]", (model or "default"), str(e)[:80])
+    return None
+
 # ---------- 输出 ----------
 DEMO_EN = {"财政部等五部门印发《常态化帮扶资金绩效评价办法》": "Five ministries issue measures on performance evaluation of regular assistance funds",
            "中国—葡萄牙经贸混委会第11次会议在里斯本召开": "11th China-Portugal Joint Economic and Trade Commission meeting held in Lisbon",
@@ -478,10 +529,11 @@ def main():
     headline = build_headline(items)
     if not demo: attach_alt(headline, items)
     headline = make_gists(headline, items, demo)
+    impact = make_impact(items, headline, demo)
     data = [to_record(it, n) for n, it in enumerate(items)]
     tags = [{"k": k, "c": v["color"]} for k, v in CFG["tags"].items()] + [{"k": CFG["other_tag"]["name"], "c": CFG["other_tag"]["color"]}]
     boot = {"src": {k: {"label": v["label"], "color": v["color"]} for k, v in CFG["sources"].items()},
-            "tags": tags, "data": data, "headline": headline, "meta": {"built": NOW.strftime("%Y-%m-%d %H:%M"), "n": len(data)}}
+            "tags": tags, "data": data, "headline": headline, "impact": impact, "meta": {"built": NOW.strftime("%Y-%m-%d %H:%M"), "n": len(data)}}
     html = (ROOT / "template.html").read_text(encoding="utf-8").replace("/*__BOOT__*/null", json.dumps(boot, ensure_ascii=False))
     out = ROOT / "dist"; out.mkdir(exist_ok=True)
     (out / "index.html").write_text(html, encoding="utf-8")
