@@ -145,26 +145,39 @@ CACHE_F = ROOT / "translate_cache.json"
 def has_cjk(s): return bool(re.search(r"[\u4e00-\u9fff]", s))
 
 def _llm_translate(titles, to_lang):
-    head = ("把下面的英文新闻标题逐条翻译成简洁的中文。" if to_lang == "zh"
-            else "Translate each of the following Chinese news headlines into a concise, natural English headline. ")
-    out = _chat(head + "只返回JSON字符串数组,顺序和条数一致。\n" + json.dumps(titles, ensure_ascii=False))
-    return json.loads(re.search(r"\[.*\]", out, re.S).group(0))
+    head = ("把下面编号的英文新闻标题逐条翻译成简洁的中文。" if to_lang == "zh"
+            else "Translate each numbered Chinese news headline into a concise, natural English headline. ")
+    numbered = {str(i + 1): t for i, t in enumerate(titles)}
+    out = _chat(head + '只返回一个JSON对象:键是原编号,值是译文,例如 {"1":"...","2":"..."}。不要合并、遗漏或调换任何一条。\n'
+                + json.dumps(numbered, ensure_ascii=False))
+    obj = json.loads(re.search(r"\{.*\}", out, re.S).group(0))
+    return [str(obj.get(str(i + 1)) or "").strip() for i in range(len(titles))]
+
+def _consistent(src, dst):
+    """译成中文后,译文里出现的英文专名(>=3 字符)必须在原文里出现过,用来挡住错位、张冠李戴。"""
+    if not has_cjk(dst): return True
+    s = src.lower()
+    return all(t.lower() in s for t in re.findall(r"[A-Za-z][A-Za-z0-9\-\.]{2,}", dst))
 
 def translate(items):
-    """双向标题翻译:英文->中文(zh)、中文->英文(en)。无 Key 时只保留原文。"""
+    """双向标题翻译:英文->中文(zh)、中文->英文(en)。按编号对应,漏掉/对不上的整条丢弃(下次构建重试)。无 Key 时只保留原文。"""
     key = os.environ.get("OPENAI_API_KEY")
     raw = json.loads(CACHE_F.read_text(encoding="utf-8")) if CACHE_F.exists() else {}
-    cache = raw if ("zh" in raw or "en" in raw) else {"zh": raw, "en": {}}      # 兼容旧版扁平缓存
+    cache = raw if raw.get("v") == 2 else {"v": 2, "zh": {}, "en": {}}      # 旧版缓存可能含错位译文,整体作废
     cache.setdefault("zh", {}); cache.setdefault("en", {})
     if key:
         for lang, need in (("zh", lambda t: not has_cjk(t)), ("en", has_cjk)):
-            todo = [it["title"] for it in items if need(it["title"]) and it["title"] not in cache[lang]]
-            for i in range(0, len(todo), 30):
-                batch = todo[i:i + 30]
+            todo = list(dict.fromkeys(it["title"] for it in items if need(it["title"]) and it["title"] not in cache[lang]))
+            bad = 0
+            for i in range(0, len(todo), 10):
+                batch = todo[i:i + 10]
                 try:
-                    for b, z in zip(batch, _llm_translate(batch, lang)): cache[lang][b] = z
+                    for b, z in zip(batch, _llm_translate(batch, lang)):
+                        if z and _consistent(b, z): cache[lang][b] = z
+                        else: bad += 1
                 except Exception as e:
                     print("[translate fail]", lang, str(e)[:60]); break
+            if bad: print(f"[translate] {lang}: dropped {bad} unmatched/empty results")
         CACHE_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     for it in items:
         t = it["title"]
@@ -280,25 +293,30 @@ def fetch_desc_feeds():
                 f = {strip_ns(c.tag): c for c in el}
                 t = clean_title((f["title"].text or "") if "title" in f else "")
                 dsc = clean_desc(f["description"].text if "description" in f and f["description"].text else "", t)
-                if t and dsc: out[norm(t)[:80]] = dsc; n += 1
+                if t and dsc: out[norm(t)[:80]] = {"t": t, "d": dsc}; n += 1
             print(f"[ok]   desc feed {url.split('/')[-3] if url.count('/')>3 else url}: {n}")
         except Exception as e:
             print("[desc feed fail]", url, str(e)[:60])
     return out
 
 def attach_descs(items):
-    """把官方摘要按标题匹配到条目上;摘要缓存在 gist_cache.json(随 Actions 缓存保留),这样已经滑出 RSS 的旧条目也还能用。"""
+    """把官方摘要按标题匹配到条目上(先精确、再相似度>=0.6);摘要缓存在 gist_cache.json(随 Actions 缓存保留)。"""
     cache = json.loads(GIST_F.read_text(encoding="utf-8")) if GIST_F.exists() else {}
     for k, v in fetch_desc_feeds().items():
         cache.pop("desc:" + k, None); cache["desc:" + k] = v
-    keys = [k for k in cache if k.startswith("desc:")]
-    for k in keys[:-800]: del cache[k]
+    for k in [k for k in cache if k.startswith("desc:")][:-800]: del cache[k]
     GIST_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    entries = [(tokens(v["t"]), v["d"]) for k, v in cache.items() if k.startswith("desc:") and isinstance(v, dict)]
     hit = 0
     for it in items:
-        if not it.get("desc"):
-            v = cache.get("desc:" + norm(it["title"])[:80])
-            if v: it["desc"] = v; hit += 1
+        if it.get("desc"): continue
+        v = cache.get("desc:" + norm(it["title"])[:80]); d = v["d"] if isinstance(v, dict) else None
+        if not d:
+            tk, best = tokens(it["title"]), 0.6
+            for etk, ed in entries:
+                j = jacc(tk, etk)
+                if j >= best: d, best = ed, j
+        if d: it["desc"] = d; hit += 1
     print(f"attached official summaries to {hit} items")
 
 def make_gists(headline, items, demo=False):
