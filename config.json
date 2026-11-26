@@ -1,0 +1,261 @@
+{
+ "timezone_offset_hours": 8,
+ "headline_top_n": 10,
+ "headline_window_hours": 24,
+ "keep_hours": 72,
+ "similar_threshold": 0.35,
+ "sources": {
+  "reuters": {
+   "label": "Reuters",
+   "color": "#E8722D",
+   "weight": 1.0
+  },
+  "bloomberg": {
+   "label": "Bloomberg",
+   "color": "#C9184A",
+   "weight": 1.0
+  },
+  "gov": {
+   "label": "部委",
+   "color": "#1D9E75",
+   "weight": 1.2
+  },
+  "other": {
+   "label": "其他",
+   "color": "#6d6c66",
+   "weight": 0.6
+  }
+ },
+ "feeds": [
+  {
+   "src": "reuters",
+   "name": "Reuters (via Google News)",
+   "url": "https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en"
+  },
+  {
+   "src": "bloomberg",
+   "name": "Bloomberg (via Google News)",
+   "url": "https://news.google.com/rss/search?q=site:bloomberg.com+when:1d&hl=en-US&gl=US&ceid=US:en"
+  },
+  {
+   "src": "gov",
+   "dept": "财政部",
+   "name": "财政部 (via Google News)",
+   "url": "https://news.google.com/rss/search?q=site:mof.gov.cn+when:2d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+  },
+  {
+   "src": "gov",
+   "dept": "商务部",
+   "name": "商务部 (via Google News)",
+   "url": "https://news.google.com/rss/search?q=site:mofcom.gov.cn+when:2d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+  },
+  {
+   "src": "gov",
+   "dept": "外交部",
+   "name": "外交部 (via Google News)",
+   "url": "https://news.google.com/rss/search?q=site:mfa.gov.cn+when:2d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+  },
+  {
+   "src": "other",
+   "name": "BBC Business",
+   "url": "https://feeds.bbci.co.uk/news/business/rss.xml"
+  }
+ ],
+ "tags": {
+  "美国": {
+   "color": "#378ADD",
+   "kw": [
+    "u.s.",
+    "us ",
+    "america",
+    "washington",
+    "trump",
+    "white house",
+    "美国",
+    "白宫",
+    "特朗普"
+   ]
+  },
+  "中国": {
+   "color": "#E24B4A",
+   "kw": [
+    "china",
+    "chinese",
+    "beijing",
+    "hong kong",
+    "中国",
+    "北京",
+    "香港",
+    "人民币"
+   ]
+  },
+  "股市": {
+   "color": "#B5482E",
+   "kw": [
+    "stock",
+    "shares",
+    "equities",
+    "nasdaq",
+    "s&p",
+    "dow",
+    "股",
+    "指数"
+   ]
+  },
+  "市场": {
+   "color": "#1D9E75",
+   "kw": [
+    "market",
+    "bond",
+    "yield",
+    "currency",
+    "dollar",
+    "债",
+    "汇率",
+    "市场"
+   ]
+  },
+  "能源": {
+   "color": "#EF9F27",
+   "kw": [
+    "oil",
+    "gas",
+    "opec",
+    "energy",
+    "refinery",
+    "原油",
+    "天然气",
+    "能源"
+   ]
+  },
+  "大宗商品": {
+   "color": "#BA7517",
+   "kw": [
+    "copper",
+    "soy",
+    "wheat",
+    "commodit",
+    "iron ore",
+    "大豆",
+    "铜",
+    "铁矿"
+   ]
+  },
+  "黄金": {
+   "color": "#BA7517",
+   "kw": [
+    "gold",
+    "黄金"
+   ]
+  },
+  "政策": {
+   "color": "#534AB7",
+   "kw": [
+    "policy",
+    "regulat",
+    "law",
+    "tariff",
+    "sanction",
+    "政策",
+    "办法",
+    "通知",
+    "规定"
+   ]
+  },
+  "财报": {
+   "color": "#D85A30",
+   "kw": [
+    "earnings",
+    "profit",
+    "revenue",
+    "quarter",
+    "财报",
+    "营收",
+    "利润"
+   ]
+  },
+  "宏观": {
+   "color": "#185FA5",
+   "kw": [
+    "inflation",
+    "gdp",
+    "imf",
+    "economy",
+    "recession",
+    "cpi",
+    "通胀",
+    "经济",
+    "宏观"
+   ]
+  },
+  "美联储": {
+   "color": "#7F77DD",
+   "kw": [
+    "fed ",
+    "federal reserve",
+    "powell",
+    "rate cut",
+    "美联储",
+    "降息",
+    "加息"
+   ]
+  },
+  "地缘": {
+   "color": "#A32D2D",
+   "kw": [
+    "war",
+    "drone",
+    "ukraine",
+    "russia",
+    "israel",
+    "gaza",
+    "missile",
+    "战争",
+    "冲突",
+    "无人机"
+   ]
+  },
+  "人工智能": {
+   "color": "#0F6E56",
+   "kw": [
+    " ai ",
+    "artificial intelligence",
+    "openai",
+    "nvidia",
+    "chip",
+    "人工智能",
+    "大模型",
+    "芯片"
+   ]
+  },
+  "科技": {
+   "color": "#378ADD",
+   "kw": [
+    "tech",
+    "software",
+    "amazon",
+    "apple",
+    "google",
+    "microsoft",
+    "科技",
+    "互联网"
+   ]
+  },
+  "楼市": {
+   "color": "#177E70",
+   "kw": [
+    "housing",
+    "property",
+    "real estate",
+    "mortgage",
+    "楼市",
+    "房地产",
+    "房价"
+   ]
+  }
+ },
+ "other_tag": {
+  "name": "其他",
+  "color": "#8F6A00"
+ }
+}

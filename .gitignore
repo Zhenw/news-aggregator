@@ -1,0 +1,9 @@
+dist/
+__pycache__/
+*.pyc
+resolve_cache.json
+gist_cache.json
+translate_cache.json
+demo.html
+.versions/
+.metadata/

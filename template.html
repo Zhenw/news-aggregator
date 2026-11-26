@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>快讯聚合</title>
+<style>
+:root{--bg:#f6f5f2;--surface:#fff;--text:#1b1b19;--muted:#6d6c66;--line:#e4e2db;--accent:#1D9E75;--hot:#C9184A}
+[data-theme=dark]{--bg:#161614;--surface:#1f1f1c;--text:#ecebe6;--muted:#9a9890;--line:#33322d}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 14px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:1100px;margin:0 auto}
+h1{font-size:17px;margin:0 8px 0 0}.sub{color:var(--muted);font-size:12px}
+input[type=search]{flex:1;min-width:140px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text)}
+button,.chip{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:999px;padding:4px 11px;cursor:pointer;font-size:13px}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.filters{max-width:1100px;margin:8px auto 0;display:flex;flex-direction:column;gap:6px}
+.filters .line{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.filters b{font-weight:500;color:var(--muted);font-size:12px;width:34px}
+main{max-width:1100px;margin:0 auto;padding:12px 14px 60px}
+.hl{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:14px}
+.hl h2{font-size:15px;margin:0 0 6px}.hl ol{margin:0;padding:0;list-style:none}
+.hl li{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid var(--line);cursor:pointer}
+.hl li:first-child{border-top:0}.rk{width:20px;height:20px;border-radius:6px;background:var(--muted);color:#fff;text-align:center;font-size:12px;flex:none}
+.rk.r1{background:#C9184A}.rk.r2{background:#E8722D}.rk.r3{background:#BA7517}
+.hl .ti{flex:1}.hl .sc{color:var(--hot);font-weight:600;font-size:12px}.hl .mt{color:var(--muted);font-size:12px}
+.dayhd{display:flex;gap:8px;align-items:baseline;margin:16px 0 8px}.dayhd h2{font-size:15px;margin:0}.dayhd span{color:var(--muted);font-size:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--c);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.card.read .ttl{color:var(--muted)}.card.star{outline:1px solid #EF9F27}
+.meta{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.pill{background:var(--c);color:#fff;border-radius:6px;padding:0 6px;font-size:12px}.hm{color:var(--hot)}
+.ttl{margin:0;font-size:14px;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.orig{font-size:12px;color:var(--muted)}.acts{display:flex;gap:6px;font-size:12px}
+.acts button,.acts a{padding:1px 8px;font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:999px;background:transparent;cursor:pointer}
+.tg{font-size:11px;color:var(--muted)}.empty{text-align:center;color:var(--muted);padding:40px}
+
+html{-webkit-text-size-adjust:100%}
+.hl .tb{flex:1;min-width:0}.hl .ti{display:block;font-weight:600}.hl .gs{color:var(--muted);font-size:13px;margin-top:2px}
+.hl li.now{background:rgba(29,158,117,.12);border-radius:8px}
+#bar{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--surface);border-top:1px solid var(--line);padding:8px 12px calc(8px + env(safe-area-inset-bottom));display:flex;gap:10px;align-items:center}
+#bar .tx{flex:1;min-width:0;font-size:13px}#bar .tx b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bar button{width:40px;height:40px;border-radius:50%;padding:0;font-size:16px}
+main{padding-bottom:90px}
+@media (max-width:640px){
+  body{font-size:15px}
+  header{padding:8px 10px}.row{gap:6px}h1{font-size:16px}
+  input[type=search]{font-size:16px;flex:1 1 100%;order:5}
+  .row button{padding:6px 12px}
+  .filters .line{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  .filters .line>span{display:flex;gap:6px}.chip{white-space:nowrap;padding:6px 12px}
+  main{padding:10px 10px 96px}.grid{grid-template-columns:1fr}
+  .hl{padding:8px 10px}.hl li{padding:9px 0}
+  .acts button,.acts a{padding:5px 12px;font-size:13px}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="row">
+    <h1>📰 快讯聚合</h1><span class="sub" id="sub"></span><span class="sub" id="live" title="后台自动刷新状态"></span>
+    <input type="search" id="q" placeholder="搜索标题…">
+    <span class="sub" id="cnt"></span>
+    <button id="star">★ 收藏</button><button id="bi">双语</button><button id="speak">▶ 连播 TOP10</button><button id="theme">◐</button><button id="reload">立即刷新</button>
+  </div>
+  <div class="filters">
+    <div class="line"><b>来源</b><span id="srcs"></span></div>
+    <div class="line"><b>分类</b><span id="tags"></span></div>
+    <div class="line"><b>时间</b><span id="times"></span></div>
+  </div>
+</header>
+<div id="bar" hidden><button id="pprev" aria-label="上一条">⏮</button><button id="pplay" aria-label="暂停">⏸</button><button id="pnext" aria-label="下一条">⏭</button><div class="tx"><b id="pt"></b><span class="sub" id="ps"></span></div><button id="pstop" aria-label="停止">✕</button></div>
+<main>
+  <section class="hl" id="hl" hidden><h2>🔥 今日头条 <span class="sub" id="hlsub"></span></h2><ol id="hllist"></ol></section>
+  <div id="list"></div>
+</main>
+<script>
+const BOOT = /*__BOOT__*/null;
+const LS = {read:'nf_read', star:'nf_star', theme:'nf_theme'};
+const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch(e) { return []; } };
+const lsSet = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let SRC={}, TAGS=[], DATA=[], HEAD=[], META={};
+let selSrc=[], selTag=[], selMin=0, onlyStar=false, bilingual=false, q='';
+const READ=new Set(lsGet(LS.read)), STAR=new Set(lsGet(LS.star));
+const TIMES=[[0,'全部'],[10,'近10分钟'],[30,'近30分钟'],[60,'近1小时'],[360,'近6小时'],[1440,'近24小时']];
+
+/* 主题:默认跟随系统 */
+(()=>{let s=null;try{s=localStorage.getItem(LS.theme)}catch(e){}
+ const dark=s?s==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+ document.documentElement.dataset.theme=dark?'dark':'light';})();
+document.getElementById('theme').onclick=()=>{const d=document.documentElement.dataset.theme==='dark'?'light':'dark';
+ document.documentElement.dataset.theme=d;try{localStorage.setItem(LS.theme,d)}catch(e){}};
+
+/* 北京时间"现在",ts 是 YYYY-MM-DD HH:MM,字符串比较即时间序 */
+function cutoff(m){const b=new Date(Date.now()+8*3600e3-m*60e3),p=x=>String(x).padStart(2,'0');
+ return b.getUTCFullYear()+'-'+p(b.getUTCMonth()+1)+'-'+p(b.getUTCDate())+' '+p(b.getUTCHours())+':'+p(b.getUTCMinutes());}
+
+function currentList(){
+  let l=DATA;
+  if(selSrc.length) l=l.filter(i=>selSrc.includes(i.src));                 // 来源:组内"或"
+  if(selTag.length) l=l.filter(i=>(i.tags||[]).some(t=>selTag.includes(t))); // 分类:组内"或"
+  if(onlyStar) l=l.filter(i=>STAR.has(i.gid));
+  if(selMin>0){const c=cutoff(selMin);l=l.filter(i=>i.ts>=c);}
+  const k=q.trim().toLowerCase();
+  if(k) l=l.filter(i=>(i.t+' '+(i.zh||'')+' '+(i.dept||'')).toLowerCase().includes(k));
+  return l;                                                                 // 组间"且"
+}
+
+function chips(boxId, items, sel, toggle){
+  const box=document.getElementById(boxId);
+  box.innerHTML=items.map(([v,label,color])=>`<button class="chip${sel().includes(v)?' on':''}" data-v="${esc(v)}">${esc(label)}</button>`).join(' ');
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{toggle(b.dataset.v);paintFilters();render();});
+}
+function toggleIn(arr,v){const i=arr.indexOf(v);i<0?arr.push(v):arr.splice(i,1);}
+function paintFilters(){
+  chips('srcs',Object.entries(SRC).map(([k,v])=>[k,v.label]),()=>selSrc,v=>toggleIn(selSrc,v));
+  chips('tags',TAGS.map(t=>[t.k,t.k]),()=>selTag,v=>toggleIn(selTag,v));
+  const box=document.getElementById('times');
+  box.innerHTML=TIMES.map(([m,l])=>`<button class="chip${selMin===m?' on':''}" data-m="${m}">${l}</button>`).join(' ');
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{selMin=+b.dataset.m;paintFilters();render();});
+  document.getElementById('star').classList.toggle('on',onlyStar);
+  document.getElementById('bi').classList.toggle('on',bilingual);
+}
+
+function card(i){
+  const s=SRC[i.src]||{label:i.src,color:'#888'};
+  const label=(i.src==='gov'&&i.dept)?i.dept:s.label;
+  const [d,hm]=i.ts.split(' ');
+  const main=i.zh||i.t, orig=(i.zh&&i.zh!==i.t)?i.t:'';
+  return `<article class="card${STAR.has(i.gid)?' star':''}${READ.has(i.gid)?' read':''}" style="--c:${s.color}" data-gid="${i.gid}">
+   <div class="meta"><span class="pill">${esc(label)}</span><span>${d} <span class="hm">${hm}</span></span></div>
+   <h3 class="ttl" title="${esc(main)}">${esc(main)}</h3>
+   ${(bilingual&&orig)?`<div class="orig">${esc(orig)}</div>`:''}
+   <div class="tg">${(i.tags||[]).map(esc).join(' · ')}</div>
+   <div class="acts"><button data-act="star">${STAR.has(i.gid)?'★ 已收藏':'☆ 收藏'}</button><a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer" data-act="open">原文</a></div>
+  </article>`;
+}
+let VIEW=[];
+function render(){
+  VIEW=currentList();
+  const el=document.getElementById('list');
+  document.getElementById('cnt').textContent=VIEW.length+' 条';
+  if(!VIEW.length){el.innerHTML='<div class="empty">没有匹配的条目</div>';return;}
+  const days=new Map();
+  for(const i of VIEW){if(!days.has(i.d))days.set(i.d,[]);days.get(i.d).push(i);}
+  let h='';
+  for(const [d,arr] of days) h+=`<div class="dayhd"><h2>${d}</h2><span>${arr[0].wk||''}</span><span>${arr.length} 条</span></div><div class="grid">${arr.map(card).join('')}</div>`;
+  el.innerHTML=h;
+}
+document.getElementById('list').addEventListener('click',e=>{
+  const c=e.target.closest('.card'); if(!c) return; const gid=c.dataset.gid;
+  const act=e.target.dataset.act;
+  if(act==='star'){STAR.has(gid)?STAR.delete(gid):STAR.add(gid);lsSet(LS.star,[...STAR]);render();return;}
+  READ.add(gid);lsSet(LS.read,[...READ]);c.classList.add('read');
+});
+
+function renderHeadline(){
+  const box=document.getElementById('hl'),ol=document.getElementById('hllist');
+  const by=new Map(DATA.map(i=>[i.gid,i]));
+  const rows=HEAD.map(h=>({h,i:by.get(h.gid)})).filter(r=>r.i);
+  if(!rows.length){box.hidden=true;return;}
+  box.hidden=false;
+  document.getElementById('hlsub').textContent='24h 加权 Top '+rows.length;
+  const age=a=>a<1?Math.max(1,Math.round(a*60))+' 分钟前':Math.round(a*10)/10+' 小时前';
+  ol.innerHTML=rows.map(({h,i},k)=>`<li data-k="${k}" data-url="${esc(i.url)}"><span class="rk r${k+1}">${k+1}</span>
+    <div class="tb"><span class="ti">${esc(i.zh||i.t)}</span>${h.gist?`<div class="gs">${esc(h.gist)}</div>`:''}
+    <div class="mt">${h.nsrc>1?h.nsrc+' 家报道 · ':''}${esc(SRC[i.src]?.label||i.src)} · ${age(h.age)}</div></div><span class="sc">${h.score}</span></li>`).join('');
+  ol.querySelectorAll('li').forEach(li=>li.onclick=()=>{ if(PL.on){playAt(+li.dataset.k);} else window.open(li.dataset.url,'_blank','noopener'); });
+}
+
+/* 连播:只播 TOP10,每条 = 序号+来源 → 标题 → 大意。使用浏览器自带语音(speechSynthesis) */
+const PL={on:false,paused:false,segs:[],n:0,tok:0};
+function voiceFor(lang){
+  const vs=(window.speechSynthesis?speechSynthesis.getVoices():[]);
+  const l=vs.filter(v=>(lang==='en'?/^en/i:/^zh/i).test(v.lang||''));
+  const pref=lang==='en'?/Samantha|Jenny|Aria|Zira|Google US/i:/Xiaoxiao|Yaoyao|Huihui|Tingting|Xiaoyi|Google.*(普通话|Mandarin)/i;
+  return l.find(v=>pref.test(v.name||''))||l[0]||null;
+}
+function pieces(s,max){const a=(s||'').match(/[^。!?!?;;\n]+[。!?!?;;]?/g)||[];const out=[];let cur='';
+  for(const x of a){if((cur+x).length>max&&cur){out.push(cur);cur='';}cur+=x;}if(cur)out.push(cur);return out;}
+function buildQueue(){
+  const by=new Map(DATA.map(i=>[i.gid,i]));
+  let rows=HEAD.map(h=>({h,i:by.get(h.gid)})).filter(r=>r.i).slice(0,10);
+  if(!rows.length) rows=VIEW.slice(0,10).map(i=>({h:{},i}));
+  const segs=[];
+  rows.forEach(({h,i},k)=>{
+    const lab=(i.src==='gov'&&i.dept)?i.dept:(SRC[i.src]?.label||'');
+    const title=i.zh||i.t, tl=(i.zh||/[\u4e00-\u9fff]/.test(i.t))?'zh':'en';
+    const push=(text,lang)=>pieces(text,70).forEach(p=>segs.push({text:p,lang,k,title}));
+    push('第'+(k+1)+'条,来自'+lab+'。','zh');
+    push(title,tl);
+    if(h.gist){push('大意:','zh');push(h.gist,h.gl||'zh');}
+  });
+  return {segs,total:rows.length};
+}
+function paintPlayer(){
+  const s=PL.segs[PL.n]; if(!s) return;
+  document.getElementById('pt').textContent=(s.k+1)+'/'+PL.total+' · '+s.title;
+  document.getElementById('ps').textContent=PL.paused?'已暂停':'播放中';
+  document.getElementById('pplay').textContent=PL.paused?'▶':'⏸';
+  document.querySelectorAll('#hllist li').forEach(li=>li.classList.toggle('now',+li.dataset.k===s.k));
+  const cur=document.querySelector('#hllist li.now'); if(cur&&cur.scrollIntoView) cur.scrollIntoView({block:'nearest',behavior:'smooth'});
+}
+function say(){
+  if(!PL.on) return;
+  if(PL.n>=PL.segs.length) return stopPlay();
+  const s=PL.segs[PL.n], tok=++PL.tok, u=new SpeechSynthesisUtterance(s.text);
+  const v=voiceFor(s.lang); if(v) u.voice=v; u.lang=v?v.lang:(s.lang==='en'?'en-US':'zh-CN'); u.rate=1.0;
+  u.onend=()=>{if(tok===PL.tok&&PL.on&&!PL.paused){PL.n++;say();}};
+  u.onerror=e=>{if(tok===PL.tok&&PL.on&&e.error!=='canceled'&&e.error!=='interrupted'){PL.n++;say();}};
+  paintPlayer(); speechSynthesis.speak(u);
+}
+function playAt(k){ // 跳到第 k 条的开头
+  const n=PL.segs.findIndex(s=>s.k===k); if(n<0) return;
+  PL.tok++; speechSynthesis.cancel(); PL.n=n; PL.paused=false; say();
+}
+function startPlay(){
+  if(!window.speechSynthesis||!window.SpeechSynthesisUtterance){alert('此浏览器不支持语音朗读');return;}
+  const q=buildQueue(); if(!q.segs.length){alert('没有可播放的内容');return;}
+  PL.segs=q.segs;PL.total=q.total;PL.n=0;PL.on=true;PL.paused=false;
+  document.getElementById('bar').hidden=false;document.getElementById('speak').textContent='■ 停止';
+  speechSynthesis.cancel(); say();   // 必须在点击手势内启动(iOS/微信)
+}
+function stopPlay(){
+  PL.on=false;PL.tok++;try{speechSynthesis.cancel();}catch(e){}
+  document.getElementById('bar').hidden=true;document.getElementById('speak').textContent='▶ 连播 TOP10';
+  document.querySelectorAll('#hllist li.now').forEach(li=>li.classList.remove('now'));
+}
+document.getElementById('speak').onclick=()=>PL.on?stopPlay():startPlay();
+document.getElementById('pstop').onclick=stopPlay;
+document.getElementById('pplay').onclick=()=>{
+  if(!PL.on) return;
+  if(PL.paused){PL.paused=false;paintPlayer();speechSynthesis.resume&&speechSynthesis.resume();if(!speechSynthesis.speaking)say();}
+  else{PL.paused=true;PL.tok++;speechSynthesis.cancel();paintPlayer();}   // 暂停=停在当前片段,继续时重读该片段
+};
+document.getElementById('pnext').onclick=()=>{if(PL.on){const k=PL.segs[PL.n].k;if(k+1<PL.total)playAt(k+1);else stopPlay();}};
+document.getElementById('pprev').onclick=()=>{if(PL.on){const k=PL.segs[PL.n].k;playAt(Math.max(0,k-1));}};
+if(window.speechSynthesis) speechSynthesis.onvoiceschanged=()=>{};
+document.getElementById('q').oninput=e=>{q=e.target.value;render();};
+document.getElementById('star').onclick=()=>{onlyStar=!onlyStar;paintFilters();render();};
+document.getElementById('bi').onclick=()=>{bilingual=!bilingual;paintFilters();render();};
+
+const POLL_MS = 5*60*1000;          // 后台刷新间隔
+let lastBuilt='', pollTimer=null;
+function apply(b, notify){
+  const old=new Set(DATA.map(i=>i.gid));
+  SRC=b.src;TAGS=b.tags;DATA=b.data;HEAD=b.headline;META=b.meta;lastBuilt=META.built;
+  document.getElementById('sub').textContent='更新于 '+META.built+' · 共 '+META.n+' 条';
+  paintFilters();renderHeadline();render();
+  if(notify){const n=DATA.filter(i=>!old.has(i.gid)).length;
+    setLive(n?('✨ 新增 '+n+' 条'):'已是最新');}
+}
+function setLive(msg){const e=document.getElementById('live');e.textContent=msg+' · '+new Date().toTimeString().slice(0,5)+' 检查';}
+async function poll(){
+  try{
+    const r=await fetch('data.json?_='+Date.now(),{cache:'no-store'});
+    if(!r.ok) throw new Error(r.status);
+    const b=await r.json();
+    if(b.meta.built!==lastBuilt) apply(b,true); else setLive('已是最新');
+  }catch(e){ setLive('⚠ 后台刷新失败'); }
+}
+function startPolling(){
+  if(!/^https?:/.test(location.protocol)){setLive('静态预览(不自动刷新)');return;}
+  poll(); pollTimer=setInterval(poll,POLL_MS);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});  // 切回标签页立即检查
+}
+document.getElementById('reload').onclick=()=>poll();
+setInterval(()=>{if(selMin>0&&selMin<=60)render();},60000);   // 短时间档随时间前移
+if(BOOT) apply(BOOT,false);
+startPolling();
+</script>
+</body>
+</html>
