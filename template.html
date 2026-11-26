@@ -53,6 +53,13 @@ main{padding-bottom:90px}
   .acts button,.acts a{padding:5px 12px;font-size:13px}
 }
 .hl .ti2{display:block;color:var(--muted);font-size:13px}
+#bar[hidden]{display:none}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+#clr{border-color:var(--hot);color:var(--hot)}
+.filters.collapsed{display:none}
+.hl.folded li.f{display:none}
+#hlmore{display:block;margin:8px auto 0}
+@media (max-width:640px){#sub,#live{font-size:11px}#sub{flex:1 1 0;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}header.hc .tool{display:none}header.hc .tool.warn{display:inline}}
 </style>
 </head>
 <body>
@@ -61,7 +68,7 @@ main{padding-bottom:90px}
     <h1>📰 快讯聚合</h1><span class="sub" id="sub"></span><span class="sub" id="live" title="后台自动刷新状态"></span>
     <input type="search" id="q" placeholder="搜索标题…">
     <span class="sub" id="cnt"></span>
-    <button id="star">★ 收藏</button><button id="bi" title="同时显示中英文标题和大意">双语</button><button id="vm" title="朗读语言">语音:中英</button><button id="speak">▶ 连播 TOP10</button><button id="theme">◐</button><button id="reload">立即刷新</button>
+    <button id="ftoggle" title="展开或收起筛选">筛选</button><button id="clr" hidden>清除筛选</button><button id="star">★ 收藏</button><button id="bi" title="同时显示中英文标题和大意">双语</button><button id="vm" title="朗读语言">语音:中英</button><button id="speak">▶ 连播 TOP10</button><button id="theme">◐</button><button id="reload">立即刷新</button>
   </div>
   <div class="filters">
     <div class="line"><b>来源</b><span id="srcs"></span></div>
@@ -71,7 +78,7 @@ main{padding-bottom:90px}
 </header>
 <div id="bar" hidden><button id="pprev" aria-label="上一条">⏮</button><button id="pplay" aria-label="暂停">⏸</button><button id="pnext" aria-label="下一条">⏭</button><div class="tx"><b id="pt"></b><span class="sub" id="ps"></span></div><button id="pstop" aria-label="停止">✕</button></div>
 <main>
-  <section class="hl" id="hl" hidden><h2>🔥 今日头条 <span class="sub" id="hlsub"></span></h2><ol id="hllist"></ol></section>
+  <section class="hl" id="hl" hidden><h2>🔥 今日头条 <span class="sub" id="hlsub"></span></h2><ol id="hllist"></ol><button id="hlmore" class="chip" hidden></button></section>
   <div id="list"></div>
 </main>
 <script>
@@ -81,6 +88,7 @@ const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || '[]'); }
 const lsSet = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let SRC={}, TAGS=[], DATA=[], HEAD=[], META={};
+let fOpen=innerWidth>640, hlOpen=false; const HL_FOLD=3;
 let selSrc=[], selTag=[], selMin=0, onlyStar=false, bilingual=(function(){try{return localStorage.getItem('nf_bi')!=='0'}catch(e){return true}})(), q='';
 const READ=new Set(lsGet(LS.read)), STAR=new Set(lsGet(LS.star));
 const TIMES=[[0,'全部'],[10,'近10分钟'],[30,'近30分钟'],[60,'近1小时'],[360,'近6小时'],[1440,'近24小时']];
@@ -121,7 +129,17 @@ function paintFilters(){
   box.querySelectorAll('button').forEach(b=>b.onclick=()=>{selMin=+b.dataset.m;paintFilters();render();});
   document.getElementById('star').classList.toggle('on',onlyStar);
   document.getElementById('bi').classList.toggle('on',bilingual);
+  paintFToggle();
 }
+function activeFilters(){return selSrc.length+selTag.length+(selMin>0?1:0)+(onlyStar?1:0)+(q.trim()?1:0);}
+function paintFToggle(){
+  const n=activeFilters(), ft=document.getElementById('ftoggle'), cl=document.getElementById('clr');
+  ft.textContent=(fOpen?'收起筛选':'筛选')+(n?' ('+n+')':''); ft.classList.toggle('on',n>0&&!fOpen);
+  cl.hidden=n===0; document.querySelector('.filters').classList.toggle('collapsed',!fOpen); document.querySelector('header').classList.toggle('hc',!fOpen);
+}
+['star','bi','vm','theme','reload','cnt','live'].forEach(id=>{const e=document.getElementById(id);if(e)e.classList.add('tool');});
+document.getElementById('ftoggle').onclick=()=>{fOpen=!fOpen;paintFToggle();};
+document.getElementById('clr').onclick=()=>{selSrc=[];selTag=[];selMin=0;onlyStar=false;q='';document.getElementById('q').value='';paintFilters();render();};
 
 function card(i){
   const s=SRC[i.src]||{label:i.src,color:'#888'};
@@ -168,9 +186,12 @@ function renderHeadline(){
   ol.innerHTML=rows.map(({h,i},k)=>{const x=pick(i);const gz=h.gist||'',ge=h.gist_en||'';
     const pre=(g,l)=>(h.via?(l==='zh'?'据'+h.via+'报道:':'Per '+h.via+': '):'')+g;
     const gs=bilingual?[gz&&pre(gz,'zh'),ge&&pre(ge,'en')].filter(Boolean):[gz?pre(gz,'zh'):(ge?pre(ge,'en'):'')].filter(Boolean);
-    return `<li data-k="${k}" data-url="${esc(i.url)}"><span class="rk r${k+1}">${k+1}</span>
+    return `<li class="${k>=HL_FOLD?'f':''}" data-k="${k}" data-url="${esc(i.url)}"><span class="rk r${k+1}">${k+1}</span>
     <div class="tb"><span class="ti">${esc(x.main)}</span>${x.alt?`<span class="ti2">${esc(x.alt)}</span>`:''}${gs.map(g=>`<div class="gs">${esc(g)}</div>`).join('')}
     <div class="mt">${h.nsrc>1?h.nsrc+' 家报道 · ':''}${esc(SRC[i.src]?.label||i.src)} · ${age(h.age)}</div></div><span class="sc">${h.score}</span></li>`;}).join('');
+  box.classList.toggle('folded',!hlOpen);
+  const hm=document.getElementById('hlmore'); hm.hidden=rows.length<=HL_FOLD; hm.textContent=hlOpen?'收起 ▴':'展开全部 ('+rows.length+') ▾';
+  hm.onclick=()=>{hlOpen=!hlOpen;renderHeadline();};
   ol.querySelectorAll('li').forEach(li=>li.onclick=()=>{ if(PL.on){playAt(+li.dataset.k);} else window.open(li.dataset.url,'_blank','noopener'); });
 }
 
@@ -205,7 +226,7 @@ function buildQueue(){
     const zh=i.zh||'',en=i.en||'';
     const zt=zh||en, et=en||zh;                       // 缺哪种语言就用另一种顶上
     const gz=h.gist||'',ge=h.gist_en||'';
-    const push=(text,lang)=>{if(text)pieces(text,lang==='en'?170:70).forEach(p=>segs.push({text:p,lang,k,title:zt}));};
+    const push=(text,lang)=>{if(text)pieces(text,lang==='en'?120:45).forEach(p=>segs.push({text:p,lang,k,title:zt}));};
     let doZh=VM!=='en', doEn=VM!=='zh';
     if(VM==='both'&&zt===et){ if(langOf(zt)==='en') doZh=false; else doEn=false; }   // 只有一种语言时不重复读
     if(doZh){push('第'+(k+1)+'条,来自'+lab+'。','zh');push(zt,langOf(zt));
@@ -238,31 +259,31 @@ function say(){
 }
 function playAt(k){ // 跳到第 k 条的开头
   const n=PL.segs.findIndex(s=>s.k===k); if(n<0) return;
-  PL.tok++; speechSynthesis.cancel(); PL.n=n; PL.paused=false; say();
+  PL.tok++; speechSynthesis.cancel(); PL.n=n; PL.paused=false; setTimeout(()=>{if(PL.on&&!PL.paused)say();},80);
 }
 function startPlay(){
   if(!window.speechSynthesis||!window.SpeechSynthesisUtterance){alert('此浏览器不支持语音朗读');return;}
   const q=buildQueue(); if(!q.segs.length){alert('没有可播放的内容');return;}
   PL.segs=q.segs;PL.total=q.total;PL.n=0;PL.on=true;PL.paused=false;
-  document.getElementById('bar').hidden=false;document.getElementById('speak').textContent='■ 停止';
+  hlOpen=true;renderHeadline();document.getElementById('bar').hidden=false;document.getElementById('speak').textContent='■ 停止';document.getElementById('speak').classList.add('on');
   speechSynthesis.cancel(); say();   // 必须在点击手势内启动(iOS/微信)
 }
 function stopPlay(){
   PL.on=false;PL.tok++;try{speechSynthesis.cancel();}catch(e){}
-  document.getElementById('bar').hidden=true;document.getElementById('speak').textContent='▶ 连播 TOP10';
+  document.getElementById('bar').hidden=true;document.getElementById('speak').textContent='▶ 连播 TOP10';document.getElementById('speak').classList.remove('on');
   document.querySelectorAll('#hllist li.now').forEach(li=>li.classList.remove('now'));
 }
 document.getElementById('speak').onclick=()=>PL.on?stopPlay():startPlay();
 document.getElementById('pstop').onclick=stopPlay;
 document.getElementById('pplay').onclick=()=>{
   if(!PL.on) return;
-  if(PL.paused){PL.paused=false;paintPlayer();speechSynthesis.resume&&speechSynthesis.resume();if(!speechSynthesis.speaking)say();}
+  if(PL.paused){PL.paused=false;paintPlayer();speechSynthesis.resume&&speechSynthesis.resume();if(!speechSynthesis.speaking)setTimeout(()=>{if(PL.on&&!PL.paused)say();},80);}
   else{PL.paused=true;PL.tok++;speechSynthesis.cancel();paintPlayer();}   // 暂停=停在当前片段,继续时重读该片段
 };
 document.getElementById('pnext').onclick=()=>{if(PL.on){const k=PL.segs[PL.n].k;if(k+1<PL.total)playAt(k+1);else stopPlay();}};
 document.getElementById('pprev').onclick=()=>{if(PL.on){const k=PL.segs[PL.n].k;playAt(Math.max(0,k-1));}};
 if(window.speechSynthesis) speechSynthesis.onvoiceschanged=()=>{};
-document.getElementById('q').oninput=e=>{q=e.target.value;render();};
+document.getElementById('q').oninput=e=>{q=e.target.value;paintFToggle();render();};
 document.getElementById('star').onclick=()=>{onlyStar=!onlyStar;paintFilters();render();};
 document.getElementById('bi').onclick=()=>{bilingual=!bilingual;try{localStorage.setItem('nf_bi',bilingual?'1':'0')}catch(e){};paintFilters();render();renderHeadline();};
 
@@ -276,7 +297,7 @@ function apply(b, notify){
   if(notify){const n=DATA.filter(i=>!old.has(i.gid)).length;
     setLive(n?('✨ 新增 '+n+' 条'):'已是最新');}
 }
-function setLive(msg){const e=document.getElementById('live');e.textContent=msg+' · '+new Date().toTimeString().slice(0,5)+' 检查';}
+function setLive(msg){const e=document.getElementById('live');e.classList.toggle('warn',msg.indexOf('⚠')>=0);e.textContent=msg+' · '+new Date().toTimeString().slice(0,5)+' 检查';}
 async function poll(){
   try{
     const r=await fetch('data.json?_='+Date.now(),{cache:'no-store'});
