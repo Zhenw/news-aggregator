@@ -245,6 +245,7 @@ def _article_text(url):
              or re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']' + name + r'["\']', html, re.I))
         return unescape(m.group(1)).strip() if m else ""
     desc = meta("og:description") or meta("description")
+    if not _good(desc): desc = ""                       # 网站标语、栏目名之类的短文本不是摘要
     paras = [unescape(re.sub(r"<[^>]+>", "", p)).strip() for p in re.findall(r"<p[^>]*>(.*?)</p>", html, re.S | re.I)]
     body = " ".join(p for p in paras if len(p) > 40)[:1800]
     return desc, body
@@ -331,7 +332,7 @@ def make_gists(headline, items, demo=False):
             h["gist"] = "这是演示数据的大意:" + (it.get("zh") or it["title"]) + "。真实运行时这里会是根据原文提炼的两三句话摘要。"
             h["gist_en"] = "Demo summary: " + (it.get("en") or it["title"]) + ". In a real run this is a two-to-three sentence summary of the article."
             continue
-        ck = h["gid"] + ":v3"
+        ck = h["gid"] + ":v4"
         if ck in cache: h.update(cache[ck]); continue
         g = {"gist": "", "gist_en": ""}
         desc = body = ""
@@ -352,6 +353,8 @@ def make_gists(headline, items, demo=False):
         if not (g["gist"] or g["gist_en"]) and _good(text):        # 没有 Key:用原文摘要,语言不翻译
             if has_cjk(text): g["gist"] = _cut(desc or text, 140)
             else: g["gist_en"] = _cut(desc or text, 260)
+        if g["gist"] and not has_cjk(g["gist"]): g["gist"] = ""          # 中文大意必须是中文
+        if g["gist_en"] and has_cjk(g["gist_en"]): g["gist_en"] = ""     # 英文大意不能夹中文
         h.update(g)
         if g["gist"] or g["gist_en"]: cache[ck] = g
     GIST_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
