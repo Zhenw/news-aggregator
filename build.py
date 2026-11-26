@@ -201,6 +201,11 @@ def tokens(t):
 
 def jacc(a, b): return len(a & b) / len(a | b) if a and b else 0
 
+def same_cluster(a, b):
+    if jacc(a, b) >= CFG["similar_threshold"]: return True
+    shared = {w for w in a & b if w.isascii()}   # 英文关键词至少 3 个相同,且占较短标题的 25% 以上
+    return len(shared) >= CFG.get("merge_min_shared", 3) and len(a & b) / max(1, min(len(a), len(b))) >= CFG.get("merge_min_overlap", 0.25)
+
 def build_headline(items):
     win = timedelta(hours=CFG["headline_window_hours"])
     pool = [it for it in items if NOW - it["dt"] <= win]
@@ -208,7 +213,7 @@ def build_headline(items):
     for it in pool:                         # items 已按时间倒序
         tk = tokens(it["title"] + " " + it.get("zh", ""))
         for c in clusters:
-            if jacc(tk, c["tk"]) >= CFG["similar_threshold"]:
+            if same_cluster(tk, c["tk"]):
                 c["items"].append(it); break
         else:
             clusters.append({"items": [it], "tk": tk})
