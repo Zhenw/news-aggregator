@@ -45,7 +45,10 @@ def fetch_feed(feed):
         link = ""
         if "link" in f:
             link = (f["link"].text or "").strip() or f["link"].attrib.get("href", "")
-        dt = parse_dt((f.get("pubDate") or f.get("published") or f.get("updated") or ET.Element("x")).text)
+        dt = None
+        for _k in ("pubDate", "published", "updated", "date"):   # 注意:不能用 or 判断 Element(无子节点的 Element 为假值)
+            if _k in f and f[_k].text:
+                dt = parse_dt(f[_k].text); break
         if not title or not link or not dt: continue
         title = re.sub(r"\s+-\s+(Reuters|Bloomberg\.com|Bloomberg|财政部|商务部|外交部)[^-]*$", "", title).strip()
         out.append({"src": feed["src"], "dept": feed.get("dept", ""), "title": title, "url": link, "dt": dt})
