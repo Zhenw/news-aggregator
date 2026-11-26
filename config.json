@@ -33,11 +33,6 @@
    "url": "https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en"
   },
   {
-   "src": "bloomberg",
-   "name": "Bloomberg (via Google News)",
-   "url": "https://news.google.com/rss/search?q=site:bloomberg.com+when:1d&hl=en-US&gl=US&ceid=US:en"
-  },
-  {
    "src": "gov",
    "dept": "财政部",
    "name": "财政部 (via Google News)",
@@ -59,6 +54,31 @@
    "src": "other",
    "name": "BBC Business",
    "url": "https://feeds.bbci.co.uk/news/business/rss.xml"
+  },
+  {
+   "src": "bloomberg",
+   "name": "Bloomberg markets (官方 RSS,自带摘要)",
+   "url": "https://feeds.bloomberg.com/markets/news.rss"
+  },
+  {
+   "src": "bloomberg",
+   "name": "Bloomberg politics (官方 RSS,自带摘要)",
+   "url": "https://feeds.bloomberg.com/politics/news.rss"
+  },
+  {
+   "src": "bloomberg",
+   "name": "Bloomberg technology (官方 RSS,自带摘要)",
+   "url": "https://feeds.bloomberg.com/technology/news.rss"
+  },
+  {
+   "src": "bloomberg",
+   "name": "Bloomberg business (官方 RSS,自带摘要)",
+   "url": "https://feeds.bloomberg.com/business/news.rss"
+  },
+  {
+   "src": "bloomberg",
+   "name": "Bloomberg economics (官方 RSS,自带摘要)",
+   "url": "https://feeds.bloomberg.com/economics/news.rss"
   }
  ],
  "tags": {
@@ -262,7 +282,7 @@
   "gov": 3,
   "default": 5
  },
- "junk_title_regex": "^(图说|图解|商务预报|商务要闻|要闻|公告|通知|更多|首页)$",
+ "junk_title_regex": "^(图说|图解|商务预报|商务要闻|要闻|公告|通知|更多|首页)$|\\(Podcast\\)",
  "low_value_regex": "例行记者会|商务预报|图说|图解|工作动态",
  "low_value_factor": 0.5,
  "desc_feeds": [
