@@ -2,8 +2,8 @@ name: build-and-deploy
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
-  workflow_dispatch:
+    - cron: "17,47 * * * *"       # every 30 min, offset from the busy :00/:30 slots (UTC)
+  workflow_dispatch:             # allow manual runs from the Actions page
   push:
     branches: [main]
 
@@ -27,12 +27,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      # keep translate / link-resolve / gist / feed caches between runs
       - uses: actions/cache@v4
         with:
           path: |
             resolve_cache.json
             gist_cache.json
             translate_cache.json
+            feed_cache.json
           key: caches-${{ github.run_id }}
           restore-keys: caches-
 
