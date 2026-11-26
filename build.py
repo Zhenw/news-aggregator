@@ -451,11 +451,11 @@ def make_impact(items, headline, demo=False):
         if len(picked) >= CFG.get("impact_max_items", 70): break
     if len(picked) < 8: return None
     lines = []
-    for it in picked:                                 # 英文用原标题,避免翻译错误(如把 oil 译成铁矿石)带偏判断
+    for n, it in enumerate(picked, 1):                # 带编号,让模型引用依据;英文用原标题,避免翻译错误带偏判断
         age = round((NOW - it["dt"]).total_seconds() / 3600, 1)
-        lines.append("[%sh前] %s" % (age, it["title"]))
+        lines.append("[%d] (%sh前) %s" % (n, age, it["title"]))
     keys = ",".join(k for k, _, _ in IMPACT_INST)
-    prompt = ("你是金融新闻分析助手。下面是近24小时的新闻标题。请只依据这些标题,判断其对以下6个品种未来1到2天的消息面影响:"
+    prompt = ("你是金融新闻分析助手。下面是近24小时的新闻标题,每条有编号。请只依据这些标题,判断其对以下6个品种未来1到2天的消息面影响:"
               "USOIL(美国原油WTI)、XAUUSD(黄金)、BTCUSD(比特币)、US500(标普500)、HK50(恒生指数)、SSE(上证指数)。\n"
               "规则:score 为整数,范围 -5 到 5;正数=利好(有利于价格上行),负数=利空,0=标题里没有明显相关信息。\n"
               "参考:原油——中东/红海/俄乌供应冲击、库存下降为利好,需求担忧、增产为利空;黄金——避险、降息预期、美元走弱为利好,加息/鹰派、美元走强为利空;"
@@ -463,10 +463,12 @@ def make_impact(items, headline, demo=False):
               "要求:1) 不要编造标题里没有的信息或具体价格;2) 每个品种的理由 zh 不超过40个汉字,en 不超过25个英文单词,必须点出具体是哪条消息;"
               "3) 利好利空并存时给较小的分数;4) summary_zh/summary_en 各用一句话概括整体基调;"
               "5) 没有直接提到该品种的标题时,不要写“未提及”或直接判0,而要结合全球风险情绪、美元与利率预期、关税与贸易摩擦、AI股票抛售、地缘冲突等宏观线索推断方向,"
-              "线索明确时给 ±1 或 ±2,理由写成“某某消息→影响逻辑”;只有确实找不到任何关联时才给0。\n"
-              "只输出JSON对象,格式:{\"summary_zh\":\"...\",\"summary_en\":\"...\",\"items\":{\"USOIL\":{\"score\":0,\"zh\":\"...\",\"en\":\"...\"},...}},"
+              "线索明确时给 ±1 或 ±2,理由写成“某某消息→影响逻辑”;只有确实找不到任何关联时才给0;"
+              "6) 每个品种必须用 ev 列出打分所依据的新闻:n=新闻编号(只能用下面出现过的编号),d=该条的方向(1利好或-1利空),w=影响大小(1到3);"
+              "每个品种最多4条,score 不为0时至少1条,不得引用无关新闻。\n"
+              "只输出JSON对象,格式:{\"summary_zh\":\"...\",\"summary_en\":\"...\",\"items\":{\"USOIL\":{\"score\":0,\"zh\":\"...\",\"en\":\"...\",\"ev\":[{\"n\":1,\"d\":1,\"w\":2}]},...}},"
               "items 必须包含这些键:" + keys + "。\n新闻标题:\n" + "\n".join(lines))
-    attempts = [(CFG.get("impact_model") or None, {"enable_thinking": False, "temperature": 0.1, "max_tokens": 1500}), (None, {"temperature": 0.1, "max_tokens": 1500})]
+    attempts = [(CFG.get("impact_model") or None, {"enable_thinking": False, "temperature": 0.1, "max_tokens": 2500}), (None, {"temperature": 0.1, "max_tokens": 2500})]
     for model, extra in attempts:
         try:
             out = _chat(prompt, model, extra)
@@ -478,7 +480,17 @@ def make_impact(items, headline, demo=False):
                 zh = str(x.get("zh", "")).strip(); en = str(x.get("en", "")).strip()
                 if not has_cjk(zh): zh = ""
                 if has_cjk(en): en = ""
-                res.append({"k": k, "name": zh_name, "name_en": en_name, "score": sc, "zh": zh, "en": en})
+                ev, seen = [], set()
+                for e in (x.get("ev") or [])[:6]:       # 依据:编号必须存在,方向只取正负号,权重限制在 1~3
+                    try:
+                        n = int(e["n"]); d = 1 if float(e["d"]) > 0 else -1; w = max(1, min(3, int(round(float(e.get("w", 1))))))
+                    except Exception: continue
+                    if not (1 <= n <= len(picked)) or n in seen: continue
+                    seen.add(n); ev.append({"g": picked[n - 1]["gid"], "d": d, "w": w})
+                ev = ev[:4]
+                if sc != 0 and not ev:                  # 没有依据的分数不展示:归零
+                    sc = 0
+                res.append({"k": k, "name": zh_name, "name_en": en_name, "score": sc, "zh": zh, "en": en, "ev": ev})
             sz, se = str(j.get("summary_zh", "")).strip(), str(j.get("summary_en", "")).strip()
             return {"built": NOW.strftime("%Y-%m-%d %H:%M"), "n": len(picked), "items": res,
                     "summary": sz if has_cjk(sz) else "", "summary_en": se if not has_cjk(se) else ""}

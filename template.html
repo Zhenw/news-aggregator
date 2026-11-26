@@ -74,6 +74,33 @@ button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .ic .ib i{position:absolute;top:0;bottom:0;border-radius:3px}.ic.up .ib i{background:#d9363e}.ic.dn .ib i{background:#1d9e75}
 .ic .ir{font-size:12px}.ic .ir2{font-size:12px;color:var(--muted);margin-top:2px}
 #imp .dis{color:var(--muted);font-size:11px;margin-top:8px}
+#imp{scroll-margin-top:210px}
+@media(max-width:640px){#imp{scroll-margin-top:100px}}
+.ic{transition:opacity .15s,border-color .15s,box-shadow .15s}
+.ic.dim{opacity:.35}.ic.hit{border-color:var(--accent);box-shadow:0 0 0 2px rgba(29,158,117,.25)}
+.ic .dl{font-size:11px;font-weight:700;margin-left:6px}
+.evb{margin-top:6px;border:0;background:none;color:var(--accent);cursor:pointer;font-size:12px;padding:0}
+.evl{display:none;list-style:none;margin:6px 0 0;padding:6px 0 0;border-top:1px dashed var(--line)}
+.ic.open .evl{display:block}
+.evl li{display:flex;gap:6px;align-items:flex-start;padding:2px 0;font-size:12px}
+.evl .d{flex:none;width:8px;height:8px;border-radius:50%;margin-top:5px}
+.evl a{color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)}.evl .s{color:var(--muted);font-size:11px}
+.noev{color:var(--muted);font-size:11px;margin-top:6px}
+.itags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.itag{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:10px;padding:1px 7px;font-size:11px;cursor:pointer}
+.itag.up{color:#d9363e;border-color:rgba(217,54,62,.4)}.itag.dn{color:#1d9e75;border-color:rgba(29,158,117,.4)}
+.impfoc{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);margin:0 0 8px}.impfoc[hidden]{display:none}
+.impfoc span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#impg{display:none;margin-top:12px;grid-template-columns:minmax(0,1.3fr) minmax(70px,.6fr) minmax(0,1fr)}
+#impg:not([hidden]){display:grid}
+#impg .gl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+#impg .gl li{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:5px 8px;font-size:12px;transition:opacity .15s}
+#impg .gl li.dim{opacity:.25}#impg .gl a{color:var(--text);text-decoration:none}
+#impg .glr{justify-content:space-around}#impg .glr li{font-weight:600}#impg .glr small{color:var(--muted);font-weight:400;margin-left:4px;font-size:11px}#impg .glr .v{float:right}
+#impg .gm{position:relative}#impg svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible}
+#impg .ln{transition:opacity .15s}
+#impgb.on{background:var(--accent);border-color:var(--accent);color:#fff}
+@media(max-width:640px){#impgb,#impg{display:none!important}}
 </style>
 </head>
 <body>
@@ -92,7 +119,7 @@ button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 </header>
 <div id="bar" hidden><button id="pprev" aria-label="上一条">⏮</button><button id="pplay" aria-label="暂停">⏸</button><button id="pnext" aria-label="下一条">⏭</button><div class="tx"><b id="pt"></b><span class="sub" id="ps"></span></div><button id="pstop" aria-label="停止">✕</button></div>
 <main>
-  <section id="imp" hidden><h2>📊 品种影响指数 <span class="sub" id="impsub"></span></h2><div class="sm" id="impsum"></div><div id="implist"></div><div class="dis">由 AI 仅依据近 24 小时新闻标题自动打分(-5 利空 ~ +5 利好,红=利好、绿=利空),只反映消息面方向,不是价格预测,不构成投资建议。</div></section>
+  <section id="imp" hidden><h2>📊 品种影响指数 <span class="sub" id="impsub"></span> <button id="impgb" class="chip">关系图</button></h2><div class="sm" id="impsum"></div><div class="impfoc" id="impfoc" hidden><span></span><button id="impfocx" class="chip">清除高亮</button></div><div id="implist"></div><div id="impg" hidden></div><div class="dis">由 AI 仅依据近 24 小时新闻标题自动打分(-5 利空 ~ +5 利好,红=利好、绿=利空),只反映消息面方向,不是价格预测,不构成投资建议。</div></section>
   <section class="hl" id="hl" hidden><h2>🔥 今日头条 <span class="sub" id="hlsub"></span></h2><ol id="hllist"></ol><button id="hlmore" class="chip" hidden></button></section>
   <div id="list"></div>
 </main>
@@ -103,6 +130,7 @@ const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || '[]'); }
 const lsSet = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let SRC={}, TAGS=[], DATA=[], HEAD=[], META={}, IMP=null;
+const EVMAP=new Map(), OPENEV=new Set(); let FOCUS=null, IGRAPH=false, GH=null;
 let fOpen=innerWidth>640, hlOpen=false; const HL_FOLD=3;
 let selSrc=[], selTag=[], selMin=0, onlyStar=false, bilingual=(function(){try{return localStorage.getItem('nf_bi')!=='0'}catch(e){return true}})(), q='';
 const READ=new Set(lsGet(LS.read)), STAR=new Set(lsGet(LS.star));
@@ -166,7 +194,7 @@ function card(i){
    <div class="meta"><span class="pill">${esc(label)}</span><span>${d} <span class="hm">${hm}</span></span></div>
    <h3 class="ttl" title="${esc(main)}">${esc(main)}</h3>
    ${(bilingual&&orig)?`<div class="orig">${esc(orig)}</div>`:''}
-   <div class="tg">${(i.tags||[]).map(esc).join(' · ')}</div>
+   <div class="tg">${(i.tags||[]).map(esc).join(' · ')}</div>${impTags(i.gid)}
    <div class="acts"><button data-act="star">${STAR.has(i.gid)?'★ 已收藏':'☆ 收藏'}</button><a href="${esc(i.url)}" target="_blank" rel="noopener noreferrer" data-act="open">原文</a></div>
   </article>`;
 }
@@ -183,24 +211,89 @@ function render(){
   el.innerHTML=h;
 }
 document.getElementById('list').addEventListener('click',e=>{
+  const tg=e.target.closest('.itag'); if(tg){impFocus(tg.dataset.hg);return;}
   const c=e.target.closest('.card'); if(!c) return; const gid=c.dataset.gid;
   const act=e.target.dataset.act;
   if(act==='star'){STAR.has(gid)?STAR.delete(gid):STAR.add(gid);lsSet(LS.star,[...STAR]);render();return;}
   READ.add(gid);lsSet(LS.read,[...READ]);c.classList.add('read');
 });
 
+function impTags(gid){
+  const a=EVMAP.get(gid); if(!a) return '';
+  return '<span class="itags">'+a.map(x=>'<button class="itag '+(x.d>0?'up':'dn')+'" data-hg="'+gid+'" title="在顶部面板高亮受影响的品种">'+esc(x.name)+(x.d>0?' ▲':' ▼')+'</button>').join('')+'</span>';
+}
 function renderImpact(){
   const box=document.getElementById('imp');
   if(!IMP||!IMP.items||!IMP.items.length){box.hidden=true;return;}
   box.hidden=false;
+  const by=new Map(DATA.map(i=>[i.gid,i]));
+  EVMAP.clear();
+  IMP.items.forEach(x=>(x.ev||[]).forEach(e=>{if(!by.has(e.g))return;if(!EVMAP.has(e.g))EVMAP.set(e.g,[]);EVMAP.get(e.g).push({k:x.k,name:x.name,d:e.d,w:e.w});}));
   document.getElementById('impsub').textContent=IMP.built+' · 基于 '+IMP.n+' 条';
   document.getElementById('impsum').textContent=(IMP.summary||'')+((bilingual&&IMP.summary_en)?' / '+IMP.summary_en:'');
   const lab=s=>s>=3?'强烈利好':s>=1?'偏利好':s<=-3?'强烈利空':s<=-1?'偏利空':'中性';
   document.getElementById('implist').innerHTML=IMP.items.map(x=>{
-    const s=x.score,cls=s>0?'up':s<0?'dn':'ne',w=Math.abs(s)*10;
-    return '<div class="ic '+cls+'"><div class="in">'+esc(x.name)+'<small>'+esc(x.k)+'</small></div><div class="iv">'+(s>0?'+':'')+s+'<span>'+lab(s)+'</span></div><div class="ib"><i style="width:'+w+'%;'+(s<0?'right:50%':'left:50%')+'"></i></div><div class="ir">'+esc(x.zh)+'</div>'+((bilingual&&x.en)?'<div class="ir2">'+esc(x.en)+'</div>':'')+'</div>';
+    const s=x.score,cls=s>0?'up':s<0?'dn':'ne',w=Math.abs(s)*10,ev=(x.ev||[]).filter(e=>by.has(e.g)),open=OPENEV.has(x.k);
+    return '<div class="ic '+cls+(open?' open':'')+'" data-k="'+esc(x.k)+'"><div class="in">'+esc(x.name)+'<small>'+esc(x.k)+'</small></div><div class="iv">'+(s>0?'+':'')+s+'<span>'+lab(s)+'</span><span class="dl"></span></div><div class="ib"><i style="width:'+w+'%;'+(s<0?'right:50%':'left:50%')+'"></i></div><div class="ir">'+esc(x.zh)+'</div>'+((bilingual&&x.en)?'<div class="ir2">'+esc(x.en)+'</div>':'')
+      +(ev.length?'<button class="evb" data-k="'+esc(x.k)+'">依据 '+ev.length+' 条 '+(open?'▴':'▾')+'</button><ul class="evl">'+ev.map(e=>{const i=by.get(e.g);return '<li><span class="d" style="background:'+(e.d>0?'#d9363e':'#1d9e75')+'"></span><span><a href="'+esc(i.url)+'" target="_blank" rel="noopener noreferrer">'+esc(i.zh||i.en||i.t)+'</a> <span class="s">'+esc(SRC[i.src]?.label||i.src)+'</span></span></li>';}).join('')+'</ul>':'<div class="noev">无直接依据</div>')+'</div>';
   }).join('');
+  document.querySelectorAll('#implist .evb').forEach(b=>b.onclick=()=>{const k=b.dataset.k;OPENEV.has(k)?OPENEV.delete(k):OPENEV.add(k);renderImpact();});
+  applyFocus(); if(IGRAPH) drawGraph();
 }
+function impFocus(g){
+  FOCUS=(FOCUS===g)?null:g; applyFocus();
+  if(FOCUS) document.getElementById('imp').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function applyFocus(){
+  if(FOCUS&&!EVMAP.has(FOCUS)) FOCUS=null;
+  const ev=FOCUS?(EVMAP.get(FOCUS)||[]):[];
+  document.querySelectorAll('#implist .ic').forEach(c=>{
+    const t=ev.find(e=>e.k===c.dataset.k);
+    c.classList.toggle('hit',!!t); c.classList.toggle('dim',!!FOCUS&&!t);
+    const d=c.querySelector('.dl'); if(d){d.textContent=t?(t.d>0?'本条 ▲利好':'本条 ▼利空'):'';d.style.color=t?(t.d>0?'#d9363e':'#1d9e75'):'';}
+  });
+  const bar=document.getElementById('impfoc');
+  if(FOCUS){const it=DATA.find(i=>i.gid===FOCUS);bar.hidden=false;bar.querySelector('span').textContent='正在查看:'+((it&&(it.zh||it.en||it.t))||'');}else bar.hidden=true;
+  graphApply();
+}
+function drawGraph(){
+  const g=document.getElementById('impg');
+  if(!IGRAPH||!IMP||!IMP.items){g.hidden=true;return;}
+  const by=new Map(DATA.map(i=>[i.gid,i]));
+  const rows=[...EVMAP.entries()].map(([gid,a])=>({gid,a,w:a.reduce((s,t)=>s+t.w,0)})).sort((x,y)=>y.w-x.w).slice(0,12);
+  g.hidden=false;
+  if(!rows.length){g.innerHTML='<div class="empty" style="grid-column:1/-1">暂无依据数据</div>';return;}
+  g.innerHTML='<ul class="gl gln">'+rows.map(r=>{const i=by.get(r.gid);return '<li data-g="'+r.gid+'"><a href="'+esc(i.url)+'" target="_blank" rel="noopener noreferrer">'+esc(i.zh||i.en||i.t)+'</a></li>';}).join('')+'</ul><div class="gm"><svg></svg></div><ul class="gl glr">'+IMP.items.map(x=>'<li data-k="'+esc(x.k)+'">'+esc(x.name)+'<small>'+esc(x.k)+'</small><span class="v" style="color:'+(x.score>0?'#d9363e':x.score<0?'#1d9e75':'var(--muted)')+'">'+(x.score>0?'+':'')+x.score+'</span></li>').join('')+'</ul>';
+  const svg=g.querySelector('svg'),sr=svg.getBoundingClientRect();
+  if(!sr.width) return;
+  let h='';
+  rows.forEach(r=>{
+    const a=g.querySelector('.gln [data-g="'+r.gid+'"]').getBoundingClientRect();
+    r.a.forEach(t=>{
+      const b=g.querySelector('.glr [data-k="'+t.k+'"]'); if(!b) return;
+      const bb=b.getBoundingClientRect(),y1=a.top+a.height/2-sr.top,y2=bb.top+bb.height/2-sr.top,mx=sr.width/2;
+      h+='<path class="ln" data-g="'+r.gid+'" data-k="'+t.k+'" d="M0,'+y1+' C'+mx+','+y1+' '+mx+','+y2+' '+sr.width+','+y2+'" fill="none" stroke="'+(t.d>0?'#d9363e':'#1d9e75')+'" stroke-width="'+(1+t.w)+'" stroke-linecap="round"/>';
+    });
+  });
+  svg.innerHTML=h;
+  g.querySelectorAll('.gln li').forEach(li=>{li.onmouseenter=()=>{GH={g:li.dataset.g};graphApply();};li.onmouseleave=()=>{GH=null;graphApply();};});
+  g.querySelectorAll('.glr li').forEach(li=>{li.onmouseenter=()=>{GH={k:li.dataset.k};graphApply();};li.onmouseleave=()=>{GH=null;graphApply();};});
+  graphApply();
+}
+function graphApply(){
+  const g=document.getElementById('impg'); if(!g||g.hidden) return;
+  const sel=GH||(FOCUS?{g:FOCUS}:null), nn=new Set(), kk=new Set();
+  g.querySelectorAll('.ln').forEach(l=>{
+    const on=!sel||(sel.g&&l.dataset.g===sel.g)||(sel.k&&l.dataset.k===sel.k);
+    l.style.opacity=on?(sel?0.95:0.55):0.06; if(on){nn.add(l.dataset.g);kk.add(l.dataset.k);}
+  });
+  g.querySelectorAll('.gln li').forEach(li=>li.classList.toggle('dim',!!sel&&!nn.has(li.dataset.g)));
+  g.querySelectorAll('.glr li').forEach(li=>li.classList.toggle('dim',!!sel&&!kk.has(li.dataset.k)));
+}
+document.getElementById('impgb').onclick=function(){IGRAPH=!IGRAPH;this.classList.toggle('on',IGRAPH);drawGraph();};
+document.getElementById('impfocx').onclick=()=>{FOCUS=null;applyFocus();};
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&FOCUS){FOCUS=null;applyFocus();}});
+addEventListener('resize',()=>{if(IGRAPH)drawGraph();});
 function renderHeadline(){
   const box=document.getElementById('hl'),ol=document.getElementById('hllist');
   const by=new Map(DATA.map(i=>[i.gid,i]));
@@ -215,11 +308,12 @@ function renderHeadline(){
     const gs=bilingual?[gz&&pre(gz,'zh'),ge&&pre(ge,'en')].filter(Boolean):[gz?pre(gz,'zh'):(ge?pre(ge,'en'):'')].filter(Boolean);
     return `<li class="${k>=HL_FOLD?'f':''}" data-k="${k}" data-url="${esc(i.url)}"><span class="rk r${k+1}">${k+1}</span>
     <div class="tb"><span class="ti">${esc(x.main)}</span>${x.alt?`<span class="ti2">${esc(x.alt)}</span>`:''}${gs.map(g=>`<div class="gs">${esc(g)}</div>`).join('')}
-    <div class="mt">${h.nsrc>1?h.nsrc+' 家报道 · ':''}${esc(SRC[i.src]?.label||i.src)} · ${age(h.age)}</div></div><span class="sc">${h.score}</span></li>`;}).join('');
+    <div class="mt">${h.nsrc>1?h.nsrc+' 家报道 · ':''}${esc(SRC[i.src]?.label||i.src)} · ${age(h.age)}</div>${impTags(h.gid)}</div><span class="sc">${h.score}</span></li>`;}).join('');
   box.classList.toggle('folded',!hlOpen);
   const hm=document.getElementById('hlmore'); hm.hidden=rows.length<=HL_FOLD; hm.textContent=hlOpen?'收起 ▴':'展开全部 ('+rows.length+') ▾';
   hm.onclick=()=>{hlOpen=!hlOpen;renderHeadline();};
   ol.querySelectorAll('li').forEach(li=>li.onclick=()=>{ if(PL.on){playAt(+li.dataset.k);} else window.open(li.dataset.url,'_blank','noopener'); });
+  ol.querySelectorAll('.itag').forEach(b=>b.onclick=e=>{e.stopPropagation();impFocus(b.dataset.hg);});
 }
 
 /* 连播:只播 TOP10,每条 = 序号+来源 → 标题 → 大意。使用浏览器自带语音(speechSynthesis) */
