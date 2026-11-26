@@ -52,6 +52,7 @@ main{padding-bottom:90px}
   .hl{padding:8px 10px}.hl li{padding:9px 0}
   .acts button,.acts a{padding:5px 12px;font-size:13px}
 }
+.hl .ti2{display:block;color:var(--muted);font-size:13px}
 </style>
 </head>
 <body>
@@ -60,7 +61,7 @@ main{padding-bottom:90px}
     <h1>📰 快讯聚合</h1><span class="sub" id="sub"></span><span class="sub" id="live" title="后台自动刷新状态"></span>
     <input type="search" id="q" placeholder="搜索标题…">
     <span class="sub" id="cnt"></span>
-    <button id="star">★ 收藏</button><button id="bi">双语</button><button id="speak">▶ 连播 TOP10</button><button id="theme">◐</button><button id="reload">立即刷新</button>
+    <button id="star">★ 收藏</button><button id="bi" title="同时显示中英文标题和大意">双语</button><button id="vm" title="朗读语言">语音:中英</button><button id="speak">▶ 连播 TOP10</button><button id="theme">◐</button><button id="reload">立即刷新</button>
   </div>
   <div class="filters">
     <div class="line"><b>来源</b><span id="srcs"></span></div>
@@ -80,7 +81,7 @@ const lsGet = k => { try { return JSON.parse(localStorage.getItem(k) || '[]'); }
 const lsSet = (k,v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let SRC={}, TAGS=[], DATA=[], HEAD=[], META={};
-let selSrc=[], selTag=[], selMin=0, onlyStar=false, bilingual=false, q='';
+let selSrc=[], selTag=[], selMin=0, onlyStar=false, bilingual=(function(){try{return localStorage.getItem('nf_bi')!=='0'}catch(e){return true}})(), q='';
 const READ=new Set(lsGet(LS.read)), STAR=new Set(lsGet(LS.star));
 const TIMES=[[0,'全部'],[10,'近10分钟'],[30,'近30分钟'],[60,'近1小时'],[360,'近6小时'],[1440,'近24小时']];
 
@@ -102,7 +103,7 @@ function currentList(){
   if(onlyStar) l=l.filter(i=>STAR.has(i.gid));
   if(selMin>0){const c=cutoff(selMin);l=l.filter(i=>i.ts>=c);}
   const k=q.trim().toLowerCase();
-  if(k) l=l.filter(i=>(i.t+' '+(i.zh||'')+' '+(i.dept||'')).toLowerCase().includes(k));
+  if(k) l=l.filter(i=>(i.t+' '+(i.zh||'')+' '+(i.en||'')+' '+(i.dept||'')).toLowerCase().includes(k));
   return l;                                                                 // 组间"且"
 }
 
@@ -126,7 +127,8 @@ function card(i){
   const s=SRC[i.src]||{label:i.src,color:'#888'};
   const label=(i.src==='gov'&&i.dept)?i.dept:s.label;
   const [d,hm]=i.ts.split(' ');
-  const main=i.zh||i.t, orig=(i.zh&&i.zh!==i.t)?i.t:'';
+  const zh=i.zh||'', en=i.en||'';
+  const main=zh||en||i.t, orig=bilingual?(main===zh?en:zh):'';
   return `<article class="card${STAR.has(i.gid)?' star':''}${READ.has(i.gid)?' read':''}" style="--c:${s.color}" data-gid="${i.gid}">
    <div class="meta"><span class="pill">${esc(label)}</span><span>${d} <span class="hm">${hm}</span></span></div>
    <h3 class="ttl" title="${esc(main)}">${esc(main)}</h3>
@@ -162,9 +164,12 @@ function renderHeadline(){
   box.hidden=false;
   document.getElementById('hlsub').textContent='24h 加权 Top '+rows.length;
   const age=a=>a<1?Math.max(1,Math.round(a*60))+' 分钟前':Math.round(a*10)/10+' 小时前';
-  ol.innerHTML=rows.map(({h,i},k)=>`<li data-k="${k}" data-url="${esc(i.url)}"><span class="rk r${k+1}">${k+1}</span>
-    <div class="tb"><span class="ti">${esc(i.zh||i.t)}</span>${h.gist?`<div class="gs">${esc(h.gist)}</div>`:''}
-    <div class="mt">${h.nsrc>1?h.nsrc+' 家报道 · ':''}${esc(SRC[i.src]?.label||i.src)} · ${age(h.age)}</div></div><span class="sc">${h.score}</span></li>`).join('');
+  const pick=i=>{const zh=i.zh||'',en=i.en||'';const main=zh||en||i.t;return {main,alt:bilingual?(main===zh?en:zh):''};};
+  ol.innerHTML=rows.map(({h,i},k)=>{const x=pick(i);const gz=h.gist||'',ge=h.gist_en||'';
+    const gs=bilingual?[gz,ge].filter(Boolean):[gz||ge].filter(Boolean);
+    return `<li data-k="${k}" data-url="${esc(i.url)}"><span class="rk r${k+1}">${k+1}</span>
+    <div class="tb"><span class="ti">${esc(x.main)}</span>${x.alt?`<span class="ti2">${esc(x.alt)}</span>`:''}${gs.map(g=>`<div class="gs">${esc(g)}</div>`).join('')}
+    <div class="mt">${h.nsrc>1?h.nsrc+' 家报道 · ':''}${esc(SRC[i.src]?.label||i.src)} · ${age(h.age)}</div></div><span class="sc">${h.score}</span></li>`;}).join('');
   ol.querySelectorAll('li').forEach(li=>li.onclick=()=>{ if(PL.on){playAt(+li.dataset.k);} else window.open(li.dataset.url,'_blank','noopener'); });
 }
 
@@ -176,8 +181,19 @@ function voiceFor(lang){
   const pref=lang==='en'?/Samantha|Jenny|Aria|Zira|Google US/i:/Xiaoxiao|Yaoyao|Huihui|Tingting|Xiaoyi|Google.*(普通话|Mandarin)/i;
   return l.find(v=>pref.test(v.name||''))||l[0]||null;
 }
-function pieces(s,max){const a=(s||'').match(/[^。!?!?;;\n]+[。!?!?;;]?/g)||[];const out=[];let cur='';
-  for(const x of a){if((cur+x).length>max&&cur){out.push(cur);cur='';}cur+=x;}if(cur)out.push(cur);return out;}
+const ENDERS='\u3002\uff01\uff1f\uff1b!?;';
+function sentences(s){const out=[];let cur='';const x=(s||'').replace(/\s+/g,' ').trim();
+  for(let k=0;k<x.length;k++){const c=x[k];cur+=c;
+    const hard=ENDERS.indexOf(c)>=0;
+    const soft=(c==='.')&&(x[k+1]===' '||k===x.length-1)&&!/(^|[\s.])[A-Z]$/.test(cur.slice(0,-1));
+    if(hard||soft){out.push(cur.trim());cur='';}}
+  if(cur.trim())out.push(cur.trim());return out;}
+function pieces(s,max){const out=[];let cur='';
+  for(const x of sentences(s)){if(cur&&(cur+' '+x).length>max){out.push(cur);cur='';}cur=cur?cur+' '+x:x;}
+  if(cur)out.push(cur);return out;}
+let VM=(function(){try{return localStorage.getItem('nf_vm')||'both'}catch(e){return 'both'}})();
+const VML={zh:'语音:中文',en:'语音:EN',both:'语音:中英'};
+const langOf=s=>/[\u4e00-\u9fff]/.test(s||'')?'zh':'en';
 function buildQueue(){
   const by=new Map(DATA.map(i=>[i.gid,i]));
   let rows=HEAD.map(h=>({h,i:by.get(h.gid)})).filter(r=>r.i).slice(0,10);
@@ -185,14 +201,23 @@ function buildQueue(){
   const segs=[];
   rows.forEach(({h,i},k)=>{
     const lab=(i.src==='gov'&&i.dept)?i.dept:(SRC[i.src]?.label||'');
-    const title=i.zh||i.t, tl=(i.zh||/[\u4e00-\u9fff]/.test(i.t))?'zh':'en';
-    const push=(text,lang)=>pieces(text,70).forEach(p=>segs.push({text:p,lang,k,title}));
-    push('第'+(k+1)+'条,来自'+lab+'。','zh');
-    push(title,tl);
-    if(h.gist){push('大意:','zh');push(h.gist,h.gl||'zh');}
+    const zh=i.zh||'',en=i.en||'';
+    const zt=zh||en, et=en||zh;                       // 缺哪种语言就用另一种顶上
+    const gz=h.gist||'',ge=h.gist_en||'';
+    const push=(text,lang)=>{if(text)pieces(text,lang==='en'?170:70).forEach(p=>segs.push({text:p,lang,k,title:zt}));};
+    let doZh=VM!=='en', doEn=VM!=='zh';
+    if(VM==='both'&&zt===et){ if(langOf(zt)==='en') doZh=false; else doEn=false; }   // 只有一种语言时不重复读
+    if(doZh){push('第'+(k+1)+'条,来自'+lab+'。','zh');push(zt,langOf(zt));
+      const g=gz||(!doEn?ge:''); if(g){push('大意:','zh');push(g,langOf(g));}}
+    if(doEn){push('Item '+(k+1)+', from '+lab+'.','en');push(et,langOf(et));
+      const g=ge||(!doZh?gz:''); if(g){push('Summary:','en');push(g,langOf(g));}}
   });
   return {segs,total:rows.length};
 }
+(function(){const b=document.getElementById('vm'); if(!b) return; b.textContent=VML[VM];
+  b.onclick=()=>{VM=VM==='both'?'zh':VM==='zh'?'en':'both';try{localStorage.setItem('nf_vm',VM)}catch(e){}
+    b.textContent=VML[VM];
+    if(PL.on){const k=(PL.segs[PL.n]||{}).k||0;const q=buildQueue();PL.segs=q.segs;PL.total=q.total;playAt(k);}};})();
 function paintPlayer(){
   const s=PL.segs[PL.n]; if(!s) return;
   document.getElementById('pt').textContent=(s.k+1)+'/'+PL.total+' · '+s.title;
@@ -238,7 +263,7 @@ document.getElementById('pprev').onclick=()=>{if(PL.on){const k=PL.segs[PL.n].k;
 if(window.speechSynthesis) speechSynthesis.onvoiceschanged=()=>{};
 document.getElementById('q').oninput=e=>{q=e.target.value;render();};
 document.getElementById('star').onclick=()=>{onlyStar=!onlyStar;paintFilters();render();};
-document.getElementById('bi').onclick=()=>{bilingual=!bilingual;paintFilters();render();};
+document.getElementById('bi').onclick=()=>{bilingual=!bilingual;try{localStorage.setItem('nf_bi',bilingual?'1':'0')}catch(e){};paintFilters();render();renderHeadline();};
 
 const POLL_MS = 5*60*1000;          // 后台刷新间隔
 let lastBuilt='', pollTimer=null;

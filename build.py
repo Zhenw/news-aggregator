@@ -144,27 +144,32 @@ def dedupe(items):
 CACHE_F = ROOT / "translate_cache.json"
 def has_cjk(s): return bool(re.search(r"[\u4e00-\u9fff]", s))
 
+def _llm_translate(titles, to_lang):
+    head = ("把下面的英文新闻标题逐条翻译成简洁的中文。" if to_lang == "zh"
+            else "Translate each of the following Chinese news headlines into a concise, natural English headline. ")
+    out = _chat(head + "只返回JSON字符串数组,顺序和条数一致。\n" + json.dumps(titles, ensure_ascii=False))
+    return json.loads(re.search(r"\[.*\]", out, re.S).group(0))
+
 def translate(items):
+    """双向标题翻译:英文->中文(zh)、中文->英文(en)。无 Key 时只保留原文。"""
     key = os.environ.get("OPENAI_API_KEY")
-    cache = json.loads(CACHE_F.read_text(encoding="utf-8")) if CACHE_F.exists() else {}
-    todo = [it for it in items if not has_cjk(it["title"]) and it["title"] not in cache]
-    if key and todo:
-        base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        model = os.environ.get("TRANSLATE_MODEL", "gpt-4o-mini")
-        for i in range(0, len(todo), 30):
-            batch = todo[i:i+30]
-            prompt = "把下面的英文新闻标题逐条翻译成简洁的中文。只返回JSON字符串数组,顺序和条数一致。\n" + json.dumps([b["title"] for b in batch], ensure_ascii=False)
-            body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0}).encode()
-            req = urllib.request.Request(base + "/chat/completions", body, {"Content-Type": "application/json", "Authorization": "Bearer " + key})
-            try:
-                txt = json.load(urllib.request.urlopen(req, timeout=60))["choices"][0]["message"]["content"]
-                arr = json.loads(re.search(r"\[.*\]", txt, re.S).group(0))
-                for b, z in zip(batch, arr): cache[b["title"]] = z
-            except Exception as e:
-                print("[translate fail]", e); break
+    raw = json.loads(CACHE_F.read_text(encoding="utf-8")) if CACHE_F.exists() else {}
+    cache = raw if ("zh" in raw or "en" in raw) else {"zh": raw, "en": {}}      # 兼容旧版扁平缓存
+    cache.setdefault("zh", {}); cache.setdefault("en", {})
+    if key:
+        for lang, need in (("zh", lambda t: not has_cjk(t)), ("en", has_cjk)):
+            todo = [it["title"] for it in items if need(it["title"]) and it["title"] not in cache[lang]]
+            for i in range(0, len(todo), 30):
+                batch = todo[i:i + 30]
+                try:
+                    for b, z in zip(batch, _llm_translate(batch, lang)): cache[lang][b] = z
+                except Exception as e:
+                    print("[translate fail]", lang, str(e)[:60]); break
         CACHE_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     for it in items:
-        it["zh"] = it["title"] if has_cjk(it["title"]) else cache.get(it["title"], "")
+        t = it["title"]
+        it["zh"] = t if has_cjk(t) else cache["zh"].get(t, "")
+        it["en"] = t if not has_cjk(t) else cache["en"].get(t, "")
     return items
 
 # ---------- 标签 ----------
@@ -246,36 +251,47 @@ def _cut(t, n):
     return seg[:k + 1] if k > n * 0.4 else seg.rstrip() + "…"
 
 def make_gists(headline, items, demo=False):
+    """TOP10 双语大意:gist(中文) + gist_en(英文)。没有足够原文时不让模型编造。"""
     by = {i["gid"]: i for i in items}
     cache = json.loads(GIST_F.read_text(encoding="utf-8")) if GIST_F.exists() else {}
     has_key = bool(os.environ.get("OPENAI_API_KEY"))
     for h in headline:
         it = by.get(h["gid"])
         if not it: continue
-        title = it.get("zh") or it["title"]
         if demo:
-            h["gist"] = "这是演示数据的大意:" + title + "。真实运行时这里会是根据原文提炼的两三句话摘要。"; h["gl"] = "zh"; continue
-        if h["gid"] in cache: h.update(cache[h["gid"]]); continue
-        g = {"gist": "", "gl": "zh"}
+            h["gist"] = "这是演示数据的大意:" + (it.get("zh") or it["title"]) + "。真实运行时这里会是根据原文提炼的两三句话摘要。"
+            h["gist_en"] = "Demo summary: " + (it.get("en") or it["title"]) + ". In a real run this is a two-to-three sentence summary of the article."
+            continue
+        ck = h["gid"] + ":v2"
+        if ck in cache: h.update(cache[ck]); continue
+        g = {"gist": "", "gist_en": ""}
         desc = body = ""
         try: desc, body = _article_text(it.get("link", it["url"]))
-        except Exception as e: print("[gist fetch fail]", title[:30], str(e)[:50])
+        except Exception as e: print("[gist fetch fail]", (it.get("zh") or it["title"])[:30], str(e)[:50])
         text = (desc + " " + body).strip() or it.get("desc", "")
-        if has_key and len(text) >= 80:      # 没有足够的原文就不让模型"凭标题编大意"
+        if has_key and len(text) >= 80:
             try:
-                g["gist"] = _chat("根据下面这条新闻的标题和正文片段,用中文写2到3句话的大意(总共80到140字),适合语音播报:"
-                                  "不要出现链接和特殊符号,不要编造原文没有的信息,只输出大意正文。\n标题:" + it["title"] + "\n正文片段:" + text[:1500])
+                out = _chat("根据下面这条新闻的标题和正文片段,分别写中文和英文各2到3句话的大意(中文80到140字;英文40到70词),适合语音播报。"
+                            "不要出现链接和特殊符号,不要编造原文没有的信息。只输出JSON对象:{\"zh\":\"...\",\"en\":\"...\"}。\n"
+                            "标题:" + it["title"] + "\n正文片段:" + text[:1500])
+                j = json.loads(re.search(r"\{.*\}", out, re.S).group(0))
+                g = {"gist": (j.get("zh") or "").strip(), "gist_en": (j.get("en") or "").strip()}
             except Exception as e: print("[gist llm fail]", str(e)[:60])
-            if re.search(r"无法|没有提供|不足以|抱歉|cannot|unable", g["gist"] or ""): g["gist"] = ""
-        if not g["gist"] and text:
+            if re.search(r"无法|没有提供|不足以|抱歉|I'm sorry|I cannot|unable to (?:summar|provide)", g["gist"] + " " + g["gist_en"], re.I):
+                g = {"gist": "", "gist_en": ""}
+        if not (g["gist"] or g["gist_en"]) and text:        # 没有 Key:用原文摘要,语言不翻译
             if has_cjk(text): g["gist"] = _cut(desc or text, 140)
-            else: g["gist"], g["gl"] = _cut(desc or text, 260), "en"
+            else: g["gist_en"] = _cut(desc or text, 260)
         h.update(g)
-        if g["gist"]: cache[h["gid"]] = g
+        if g["gist"] or g["gist_en"]: cache[ck] = g
     GIST_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
     return headline
 
 # ---------- 输出 ----------
+DEMO_EN = {"财政部等五部门印发《常态化帮扶资金绩效评价办法》": "Five ministries issue measures on performance evaluation of regular assistance funds",
+           "中国—葡萄牙经贸混委会第11次会议在里斯本召开": "11th China-Portugal Joint Economic and Trade Commission meeting held in Lisbon",
+           "外交部发言人主持例行记者会": "Foreign Ministry spokesperson holds regular press briefing"}
+
 def demo_items():
     base = NOW.replace(second=0, microsecond=0)
     rows = [("reuters","","Fed officials signal patience on rate cuts as inflation stays sticky",5,"美联储官员表示通胀仍具粘性,降息需要耐心"),
@@ -296,12 +312,14 @@ def demo_items():
 
 def to_record(it, i):
     return {"id": i, "gid": it["gid"], "src": it["src"], "dept": it["dept"],
-            "t": it["title"], "zh": it.get("zh", ""), "url": it.get("link", it["url"]), "ts": it["dt"].strftime("%Y-%m-%d %H:%M"),
+            "t": it["title"], "zh": it.get("zh") or (it["title"] if has_cjk(it["title"]) else ""), "en": it.get("en") or (it["title"] if not has_cjk(it["title"]) else ""), "url": it.get("link", it["url"]), "ts": it["dt"].strftime("%Y-%m-%d %H:%M"),
             "d": it["dt"].strftime("%Y-%m-%d"), "wk": "周" + WEEK[it["dt"].weekday()], "tags": it["tags"]}
 
 def main():
     demo = "--demo" in sys.argv
     items = demo_items() if demo else fetch_all()
+    if demo:
+        for _i in items: _i["en"] = DEMO_EN.get(_i["title"], "" if has_cjk(_i["title"]) else _i["title"])
     items = dedupe(items)
     cutoff = NOW - timedelta(hours=CFG["keep_hours"])
     items = [i for i in items if i["dt"] >= cutoff]
