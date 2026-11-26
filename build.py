@@ -20,6 +20,29 @@ NOW = datetime.now(TZ)
 UA = "Mozilla/5.0 (compatible; NewsAggregator/0.1)"
 WEEK = "一二三四五六日"
 
+# ---------- 标题清理 / 垃圾过滤 ----------
+PUB_SUFFIX = re.compile(
+    r"(?:^|\s+)[-–—|]\s*(?:中华人民共和国[\u4e00-\u9fff]{1,12}|[\u4e00-\u9fff]{2,12}(?:部|委|局|署|网|办|院|会|厅)|"
+    r"Reuters|Bloomberg(?:\.com)?|BBC(?: News)?|全球法规网|新华网|人民网)\s*$")
+
+def clean_title(t, source=""):
+    t = re.sub(r"\s+", " ", unescape(t or "")).strip()
+    if source and t.endswith(source):                     # 精确匹配 RSS 的 <source>
+        t = t[: -len(source)].rstrip(" -–—|").strip()
+    for _ in range(2): t = PUB_SUFFIX.sub("", t).strip()
+    return t.strip(" -–—|").strip()
+
+JUNK = re.compile(CFG.get("junk_title_regex", r"^$"))
+LOWV = re.compile(CFG.get("low_value_regex", r"$^"))
+def is_junk(t):
+    t = (t or "").strip()
+    return len(re.sub(r"\s", "", t)) < 6 or bool(JUNK.search(t))
+
+def clean_desc(desc, title):
+    d = unescape(re.sub(r"<[^>]+>", " ", desc or "")); d = re.sub(r"\s+", " ", d).strip()
+    if len(d) < 30 or d.lower().startswith(title[:25].lower()): return ""   # Google News 的描述只是标题+来源,丢弃
+    return d
+
 # ---------- 抓取 ----------
 def parse_dt(s):
     if not s: return None
@@ -50,8 +73,11 @@ def fetch_feed(feed):
             if _k in f and f[_k].text:
                 dt = parse_dt(f[_k].text); break
         if not title or not link or not dt: continue
-        title = re.sub(r"\s+-\s+(Reuters|Bloomberg\.com|Bloomberg|财政部|商务部|外交部)[^-]*$", "", title).strip()
-        out.append({"src": feed["src"], "dept": feed.get("dept", ""), "title": title, "url": link, "dt": dt})
+        source = (f["source"].text or "").strip() if "source" in f else ""
+        title = clean_title(title, source)
+        if is_junk(title): continue
+        desc = clean_desc(f["description"].text, title) if "description" in f else ""
+        out.append({"src": feed["src"], "dept": feed.get("dept", ""), "title": title, "url": link, "dt": dt, "desc": desc})
     return out
 
 def fetch_all():
@@ -165,7 +191,7 @@ def build_headline(items):
         tk = tokens(it["title"] + " " + it.get("zh", ""))
         for c in clusters:
             if jacc(tk, c["tk"]) >= CFG["similar_threshold"]:
-                c["items"].append(it); c["tk"] |= tk; break
+                c["items"].append(it); break
         else:
             clusters.append({"items": [it], "tk": tk})
     ranked = []
@@ -176,12 +202,18 @@ def build_headline(items):
         newest = max(i["dt"] for i in its)
         age_h = (NOW - newest).total_seconds() / 3600
         decay = 0.5 ** (age_h / 6)           # 半衰期 6 小时
-        score = round(100 * (w + 0.8 * (len(srcs) - 1)) * (0.4 + 0.6 * decay))
+        score = 100 * (w + 0.8 * (len(srcs) - 1)) * (0.4 + 0.6 * decay)
         rep = max(its, key=lambda i: (CFG["sources"][i["src"]]["weight"], i["dt"]))
-        ranked.append((score, rep, len(its), len(srcs), age_h))
+        if LOWV.search(rep["title"] + " " + rep.get("zh", "")): score *= CFG.get("low_value_factor", 0.5)   # 例行记者会/预报等降权
+        ranked.append((round(score), rep, len(its), len(srcs), age_h))
     ranked.sort(key=lambda x: -x[0])
-    return [{"gid": r[1]["gid"], "score": r[0], "n": r[2], "nsrc": r[3], "age": round(r[4], 2)}
-            for r in ranked[:CFG["headline_top_n"]]]
+    caps, used, picked = CFG.get("headline_max_per_source", {}), {}, []
+    for r in ranked:                                   # 每个来源最多占 N 席,避免被某一类刷屏
+        src = r[1]["src"]; cap = caps.get(src, caps.get("default", 99))
+        if used.get(src, 0) >= cap: continue
+        used[src] = used.get(src, 0) + 1; picked.append(r)
+        if len(picked) >= CFG["headline_top_n"]: break
+    return [{"gid": r[1]["gid"], "score": r[0], "n": r[2], "nsrc": r[3], "age": round(r[4], 2)} for r in picked]
 
 # ---------- TOP10 大意(抓原文 → 有 API Key 则 LLM 提炼中文大意,否则取摘要) ----------
 GIST_F = ROOT / "gist_cache.json"
@@ -228,7 +260,7 @@ def make_gists(headline, items, demo=False):
         desc = body = ""
         try: desc, body = _article_text(it.get("link", it["url"]))
         except Exception as e: print("[gist fetch fail]", title[:30], str(e)[:50])
-        text = (desc + " " + body).strip()
+        text = (desc + " " + body).strip() or it.get("desc", "")
         if has_key and (text or title):
             try:
                 g["gist"] = _chat("根据下面这条新闻的标题和正文片段,用中文写2到3句话的大意(总共80到140字),适合语音播报:"

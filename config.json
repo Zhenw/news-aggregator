@@ -18,7 +18,7 @@
   "gov": {
    "label": "部委",
    "color": "#1D9E75",
-   "weight": 1.2
+   "weight": 0.9
   },
   "other": {
    "label": "其他",
@@ -257,5 +257,12 @@
  "other_tag": {
   "name": "其他",
   "color": "#8F6A00"
- }
+ },
+ "headline_max_per_source": {
+  "gov": 3,
+  "default": 5
+ },
+ "junk_title_regex": "^(图说|图解|商务预报|商务要闻|要闻|公告|通知|更多|首页)$",
+ "low_value_regex": "例行记者会|商务预报|图说|图解|工作动态",
+ "low_value_factor": 0.5
 }
