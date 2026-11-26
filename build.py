@@ -261,11 +261,12 @@ def make_gists(headline, items, demo=False):
         try: desc, body = _article_text(it.get("link", it["url"]))
         except Exception as e: print("[gist fetch fail]", title[:30], str(e)[:50])
         text = (desc + " " + body).strip() or it.get("desc", "")
-        if has_key and (text or title):
+        if has_key and len(text) >= 80:      # 没有足够的原文就不让模型"凭标题编大意"
             try:
                 g["gist"] = _chat("根据下面这条新闻的标题和正文片段,用中文写2到3句话的大意(总共80到140字),适合语音播报:"
                                   "不要出现链接和特殊符号,不要编造原文没有的信息,只输出大意正文。\n标题:" + it["title"] + "\n正文片段:" + text[:1500])
             except Exception as e: print("[gist llm fail]", str(e)[:60])
+            if re.search(r"无法|没有提供|不足以|抱歉|cannot|unable", g["gist"] or ""): g["gist"] = ""
         if not g["gist"] and text:
             if has_cjk(text): g["gist"] = _cut(desc or text, 140)
             else: g["gist"], g["gl"] = _cut(desc or text, 260), "en"
