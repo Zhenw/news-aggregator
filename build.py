@@ -462,21 +462,48 @@ def make_gists(headline, items, demo=False):
 IMPACT_INST = [("USOIL", "美国原油", "US Crude Oil"), ("XAUUSD", "黄金", "Gold"), ("BTCUSD", "比特币", "Bitcoin"),
                ("US500", "标普500", "S&P 500"), ("HK50", "恒生指数", "Hang Seng"), ("SSE", "上证指数", "Shanghai Composite")]
 
-# 依据关联度过滤:每个品种只认与它有关的关键词(英文用原标题,中文用译文/原文),模型引用了不相关的新闻会被丢弃
-_M_RATES = r"\bfed\b|federal reserve|powell|fomc|interest rates?|rate (?:hike|cut)s?|inflation|\bcpi\b|\bpce\b|treasury|bond yields?|dollar|\bgdp\b|payrolls?|recession|美联储|鲍威尔|加息|降息|利率|通胀|美元|国债|收益率|衰退|非农"
-_M_TRADE = r"tariffs?|trade (?:war|deal|truce|talks)|export controls?|chip curbs?|sanctions?|关税|贸易战|贸易协议|出口管制|制裁|芯片限制"
-_M_GEO = r"\bwar\b|missiles?|nuclear|attacks?|strikes?|ukraine|russia|israel|iran|houthi|red sea|middle east|战争|导弹|核武|袭击|乌克兰|俄罗斯|以色列|伊朗|胡塞|红海|中东"
-_M_RISK = r"stocks?|equit(?:y|ies)|nasdaq|s&p|wall street|sell-?off|rout|rally|\bai\b|nvidia|volatility|risk appetite|credit|股市|股票|纳斯达克|标普|抛售|人工智能|英伟达|波动|风险偏好|信用"
-_M_TECH = r"\bai\b|tech|chips?|semiconductor|nvidia|科技|芯片|半导体|人工智能|英伟达"
-IMPACT_REL = {
-    "USOIL": r"\boil\b|crude|\bopec\b|brent|\bwti\b|refiner|gasoline|diesel|pipeline|tanker|hormuz|saudi|energy|shipping|原油|石油|油价|炼油|能源|沙特|油轮|霍尔木兹|" + "|".join([_M_GEO, _M_TRADE, _M_RATES]),
-    "XAUUSD": r"\bgold\b|bullion|silver|precious|safe[- ]haven|黄金|金价|贵金属|避险|" + "|".join([_M_RATES, _M_GEO, _M_TRADE]),
-    "BTCUSD": r"bitcoin|crypto|stablecoin|\bbtc\b|ether(?:eum)?|digital assets?|比特币|加密|数字资产|稳定币|" + "|".join([_M_RATES, _M_RISK, _M_TRADE]),
-    "US500": r"earnings|profits?|guidance|economy|economic|retail|consumer|jobs|美国经济|财报|盈利|消费|经济|" + "|".join([_M_RISK, _M_RATES, _M_TRADE, _M_GEO]),
-    "HK50": r"hong kong|hang seng|china|chinese|beijing|\bxi\b|yuan|renminbi|alibaba|tencent|xiaomi|byd|huawei|asia|asian|港|恒生|中国|北京|人民币|阿里|腾讯|华为|亚洲|" + "|".join([_M_TRADE, _M_RATES, _M_TECH]),
-    "SSE": r"china|chinese|beijing|shanghai|\bxi\b|yuan|renminbi|pboc|csrc|mofcom|a-shares?|商务部|中国|北京|上海|人民币|央行|证监会|A股|财政部|国务院|" + "|".join([_M_TRADE, _M_RATES, _M_TECH]),
+# 依据质量过滤(两层):
+#  1) 品种专属词(strong)命中才算直接相关;通用宏观词(macro:关税、美联储、利率……)命中时,必须同时带明确的方向词才算依据
+#  2) 方向以标题里的方向词为准(覆盖模型给的方向);同一标题多空方向词并存则视为方向不明,丢弃
+_EQ_NEG = (r"tariffs?\s+(?:hikes?|raise\w*|threats?|target\w*|levies|plans?|on|against)|(?:new|fresh|higher|revive[sd]?|reveals?|unveil\w*|announce[sd]?|impos\w+|threat\w*)\s+(?:\w+\s+){0,3}tariffs?"
+           r"|sell-?off|\brout\b|slump|tumble|plunge|\bslides?\b|hawkish|rate hikes?|hike rates|sticky inflation|recession|export controls?|chip curbs?|\bcurbs?\b|crackdown|sanctions?"
+           r"|抛售|暴跌|下跌|加征关税|新关税|加息|鹰派|衰退|制裁|芯片限制|出口管制")
+_EQ_POS = (r"\brall(?:y|ies|ied)\b|rebound\w*|bounce\w*|\bgains?\b|record high|\bsurge[sd]?\b|\bsoar\w*|rate cuts?|cuts? rates|dovish|truce|trade (?:deal|pact|agreement)|stimulus|easing"
+           r"|tariff (?:cut|relief|exemption)|not as dire|lifts? (?:sanctions|curbs|restrictions)|eases? (?:sanctions|curbs|export)|removed? from (?:the )?(?:sanctions|entity) list"
+           r"|反弹|大涨|降息|刺激|停战|贸易协议|宽松|鸽派|降低关税|取消关税|移出|解除|豁免|放宽|取消制裁")
+_CHINA = r"hong kong|hang seng|china|chinese|beijing|\bxi\b|yuan|renminbi|alibaba|tencent|xiaomi|byd|huawei|港股|恒生|中国|北京|人民币|阿里|腾讯|华为"
+IMPACT_SPEC = {
+    "USOIL": dict(strong=r"\boil\b|crude|\bopec\b|brent|\bwti\b|refiner|gasoline|diesel|pipeline|tanker|原油|石油|油价|炼油|油轮|欧佩克",
+                  macro=r"iran|houthi|red sea|middle east|hormuz|saudi|libya|iraq|russia\w* (?:oil|energy|sanction)|伊朗|胡塞|红海|中东|霍尔木兹|沙特",
+                  pos=r"attacks?|strikes?|drone|missile|houthi|sanction|supply (?:concerns?|disruption|cuts?|fears)|output cuts?|production cuts?|outage|blockade|\brises?\b|\bclimbs?\b|\bjumps?\b|\bsurges?\b|袭击|攻击|制裁|减产|供应担忧|上涨",
+                  neg=r"glut|oversuppl\w+|demand (?:concerns?|fears|slump|weak\w*)|(?:output|production) (?:increases?|hikes?)|raises? (?:output|production)|ceasefire|peace (?:deal|talks)|inventory build|\bfalls?\b|\bdrops?\b|\bslumps?\b|recession|增产|供应过剩|需求疲软|停火|下跌"),
+    "XAUUSD": dict(strong=r"\bgold\b|bullion|precious metals?|safe[- ]haven|黄金|金价|贵金属|避险",
+                   macro=r"\bfed\b|federal reserve|powell|fomc|interest rates?|rate (?:hike|cut)s?|inflation|treasury|bond yields?|dollar|nuclear|\bwar\b|escalat\w+|conflict|美联储|鲍威尔|加息|降息|利率|通胀|美元|国债|核武|战争",
+                   pos=r"dollar (?:falls?|slides?|weak\w*|drops?)|dovish|rate cuts?|cuts? rates|safe[- ]haven|yields? (?:fall|drop|slip)|\bwar\b|nuclear|escalat\w+|conflict|美元(?:走弱|下跌)|降息|鸽派|避险|战争|核武|paus(?:e|es|ed)\b",
+                   neg=r"dollar (?:rall\w+|strength\w*|gains?|surges?|climbs?)|strong dollar|hawkish|rate hikes?|hike rates|yields? (?:rise|climb|jump|surge)|sticky inflation|美元(?:走强|上涨)|加息|鹰派|通胀(?:顽固|居高)"),
+    "BTCUSD": dict(strong=r"bitcoin|crypto|stablecoin|\bbtc\b|ether(?:eum)?\b|digital assets?|比特币|加密|稳定币|数字资产",
+                   macro=r"\bai\b|nasdaq|risk appetite|credit|liquidity|\bfed\b|interest rates?|rate (?:hike|cut)s?|纳斯达克|人工智能|风险偏好|流动性|美联储|加息|降息",
+                   pos=r"\brall(?:y|ies|ied)\b|rebound\w*|bounce\w*|\bsurge[sd]?\b|\bsoar\w*|record high|inflows?|etf approv\w+|rate cuts?|dovish|easing|premature|overdone|overblown|反弹|大涨|流入|降息|宽松|鸽派",
+                   neg=r"sell-?off|\brout\b|slump|plunge|tumble|crash|panic|crackdown|\bbans?\b|banned|hawkish|rate hikes?|tighten\w*|liquidat\w+|outflows?|抛售|暴跌|恐慌|打压|禁止|鹰派|加息|收紧|流出"),
+    "US500": dict(strong=r"nasdaq|s&p|wall street|dow jones|u\.?s\.? (?:stocks|equities|shares)|\bai (?:stocks?|trade|rout)|nvidia|美股|纳斯达克|标普|英伟达",
+                  macro=r"\bfed\b|federal reserve|powell|interest rates?|rate (?:hike|cut)s?|inflation|tariffs?|trade (?:war|deal|truce)|earnings|recession|美联储|加息|降息|通胀|关税|财报|衰退",
+                  pos=_EQ_POS, neg=_EQ_NEG),
+    "HK50": dict(strong=_CHINA, macro=r"tariffs?|chip curbs?|export controls?|关税|芯片限制|出口管制", pos=_EQ_POS, neg=_EQ_NEG),
+    "SSE": dict(strong=r"china|chinese|beijing|shanghai|\bxi\b|yuan|renminbi|pboc|csrc|mofcom|a-shares?|商务部|中国|北京|上海|央行|证监会|A股|财政部|国务院|人民币",
+                macro=r"tariffs?|chip curbs?|export controls?|关税|芯片限制|出口管制", pos=_EQ_POS + r"|支持|促进|扩大开放", neg=_EQ_NEG),
 }
-_REL_RE = {k: re.compile(v, re.I) for k, v in IMPACT_REL.items()}
+IMPACT_SPEC = {k: {n: re.compile(v, re.I) for n, v in d.items()} for k, d in IMPACT_SPEC.items()}
+
+def _ev_check(k, title, zh=""):
+    """返回 (是否可作依据, 强制方向)。强制方向 0 表示沿用模型给的方向。"""
+    sp, txt = IMPACT_SPEC[k], title + " " + zh
+    strong, macro = bool(sp["strong"].search(txt)), bool(sp["macro"].search(txt))
+    if not (strong or macro): return False, 0
+    pos, neg = bool(sp["pos"].search(txt)), bool(sp["neg"].search(txt))
+    if pos and neg: return False, 0                    # 多空方向词并存:方向不明,不作依据
+    if pos or neg: return True, (1 if pos else -1)
+    return strong, 0                                   # 没有方向词:只有品种专属词命中才放行
+
 
 def make_impact(items, headline, demo=False):
     if demo or not os.environ.get("OPENAI_API_KEY"): return None
@@ -526,9 +553,10 @@ def make_impact(items, headline, demo=False):
                 except Exception: continue
                 if not (1 <= n <= len(picked)) or n in seen: continue
                 seen.add(n); it = picked[n - 1]
-                if not _REL_RE[k].search(it["title"] + " " + it.get("zh", "")):   # 关联度过滤:标题与该品种无关
+                ok, fd = _ev_check(k, it["title"], it.get("zh", ""))           # 依据质量过滤:相关性 + 方向
+                if not ok:
                     dropped += 1; continue
-                ev.append({"g": it["gid"], "d": d, "w": w})
+                ev.append({"g": it["gid"], "d": fd or d, "w": w})
             ev = ev[:4]
             res[k] = _impact_fix(sc, ev, zh, en, zh_name, en_name, k, dropped)
         sz, se = str(j.get("summary_zh", "")).strip(), str(j.get("summary_en", "")).strip()
@@ -571,12 +599,13 @@ def make_impact(items, headline, demo=False):
 def _impact_fix(sc, ev, zh, en, zh_name, en_name, k, dropped):
     note = ""
     if sc != 0 and not ev:                          # 没有(相关)依据的分数不展示:归零
-        sc, note = 0, "没有直接相关的新闻依据"
+        sc, note = 0, "没有直接相关依据"
     elif sc != 0 and sc * sum(e["d"] * e["w"] for e in ev) < 0:      # 分数方向与依据方向矛盾:归零
         sc, note = 0, "依据方向与判断矛盾,按中性处理"
     elif sc != 0 and abs(sc) > sum(e["w"] for e in ev):             # 分数不能超过依据所能支撑的强度
         sc = (1 if sc > 0 else -1) * sum(e["w"] for e in ev)
     if dropped: print("[impact] %s 丢弃 %d 条不相关依据" % (k, dropped))
+    if sc == 0 and not ev and not note: note = "没有直接相关依据"
     if note: zh, en = note, ("No directly relevant evidence" if "没有" in note else "Evidence conflicts with the call; treated as neutral")
     return {"k": k, "name": zh_name, "name_en": en_name, "score": sc, "zh": zh, "en": en, "ev": ev}
 
