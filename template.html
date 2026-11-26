@@ -352,7 +352,8 @@ function buildQueue(){
     if(VM==='both'&&zt===et){ if(langOf(zt)==='en') doZh=false; else doEn=false; }   // 只有一种语言时不重复读
     if(doZh){push('第'+(k+1)+'条,来自'+lab+'。','zh');push(zt,langOf(zt));
       const g=gz||(!doEn?ge:''); if(g){push(h.via?'据'+h.via+'报道:':'大意:','zh');push(g,langOf(g));}}
-    if(doEn){push('Item '+(k+1)+', from '+lab+'.','en');push(et,langOf(et));
+    const labEn=(i.src==='gov'&&i.dept)?(i.dept_en||i.dept):lab;
+    if(doEn){push('Item '+(k+1)+', from '+labEn+'.','en');push(et,langOf(et));
       const g=ge||(!doZh?gz:''); if(g){push(h.via?'According to '+h.via+':':'Summary:','en');push(g,langOf(g));}}
   });
   return {segs,total:rows.length};

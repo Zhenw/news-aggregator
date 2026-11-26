@@ -147,14 +147,30 @@ def has_cjk(s): return bool(re.search(r"[\u4e00-\u9fff]", s))
 def _llm_translate(titles, to_lang):
     head = ("把下面编号的英文新闻标题逐条翻译成简洁的中文。" if to_lang == "zh"
             else "Translate each numbered Chinese news headline into a concise, natural English headline. ")
+    if to_lang == "zh": head += "术语对照:oil/crude=原油(油价=oil prices),iron ore=铁矿石,gold=黄金,copper=铜,natural gas=天然气,bitcoin=比特币,lithium=锂,soybeans=大豆。不要把一种商品译成另一种。"
     numbered = {str(i + 1): t for i, t in enumerate(titles)}
     out = _chat(head + '只返回一个JSON对象:键是原编号,值是译文,例如 {"1":"...","2":"..."}。不要合并、遗漏或调换任何一条。\n'
                 + json.dumps(numbered, ensure_ascii=False))
     obj = json.loads(re.search(r"\{.*\}", out, re.S).group(0))
     return [str(obj.get(str(i + 1)) or "").strip() for i in range(len(titles))]
 
+# 大宗商品/资产术语:原文有的词,译文必须有对应词;原文没有的词,译文不许凭空出现(挡住"oil→铁矿石"这类错译)
+TERM_PAIRS = [(r"iron ore", r"铁矿"), (r"bitcoin|\bbtc\b", r"比特币"), (r"\bcopper\b", r"铜"), (r"\bgold\b", r"黄金|金价"),
+              (r"natural gas|\blng\b", r"天然气|液化气"), (r"lithium", r"锂"), (r"soybeans?", r"大豆|豆"), (r"crude|brent|\bwti\b|\boil\b", r"油"),
+              (r"\bsilver\b", r"白银|银价"), (r"\bcoal\b", r"煤"), (r"\bwheat\b", r"小麦"), (r"\bcocoa\b", r"可可")]
+def _terms_ok(src, dst):
+    en, zh = (dst, src) if has_cjk(src) else (src, dst)
+    if not (has_cjk(zh) and not has_cjk(en)): return True
+    for e, z in TERM_PAIRS:
+        en_has, zh_has = bool(re.search(e, en, re.I)), bool(re.search(z, zh))
+        if en_has == zh_has: continue
+        if not en_has and e[:5] in ("crude", "soybe"): continue                  # 中文的"油""豆"太泛(汽油、咖啡豆),只在英文有这个词时才要求中文对应
+        return False
+    return True
+
 def _consistent(src, dst):
     """译成中文后,译文里出现的英文专名(>=3 字符)必须在原文里出现过,用来挡住错位、张冠李戴。"""
+    if not _terms_ok(src, dst): return False
     if not has_cjk(dst): return True
     s = src.lower()
     return all(t.lower() in s for t in re.findall(r"[A-Za-z][A-Za-z0-9\-\.]{2,}", dst))
@@ -165,6 +181,10 @@ def translate(items):
     raw = json.loads(CACHE_F.read_text(encoding="utf-8")) if CACHE_F.exists() else {}
     cache = raw if raw.get("v") == 2 else {"v": 2, "zh": {}, "en": {}}      # 旧版缓存可能含错位译文,整体作废
     cache.setdefault("zh", {}); cache.setdefault("en", {})
+    for lg in ("zh", "en"):                                               # 旧缓存里术语错译的条目清掉,下次构建会重译
+        bad_k = [k for k, v in cache[lg].items() if not _terms_ok(k, v)]
+        for k in bad_k: del cache[lg][k]
+        if bad_k: print(f"[translate] purged {len(bad_k)} cached {lg} entries with term mismatch")
     if key:
         for lang, need in (("zh", lambda t: not has_cjk(t)), ("en", has_cjk)):
             todo = list(dict.fromkeys(it["title"] for it in items if need(it["title"]) and it["title"] not in cache[lang]))
@@ -230,10 +250,15 @@ def build_headline(items):
         if LOWV.search(rep["title"] + " " + rep.get("zh", "")): score *= CFG.get("low_value_factor", 0.5)   # 例行记者会/预报等降权
         ranked.append((round(score), rep, len(its), len(srcs), age_h))
     ranked.sort(key=lambda x: -x[0])
-    caps, used, picked = CFG.get("headline_max_per_source", {}), {}, []
+    caps, used, picked, tused = CFG.get("headline_max_per_source", {}), {}, [], {}
     for r in ranked:                                   # 每个来源最多占 N 席,避免被某一类刷屏
         src = r[1]["src"]; cap = caps.get(src, caps.get("default", 99))
         if used.get(src, 0) >= cap: continue
+        txt = r[1]["title"] + " " + r[1].get("zh", "")
+        hit = [t["name"] for t in CFG.get("headline_topic_caps", []) if re.search(t["regex"], txt, re.I) and tused.get(t["name"], 0) >= t["max"]]
+        if hit: continue                               # 同一主题(如关税)最多占 N 席,把位置让给别的新闻
+        for t in CFG.get("headline_topic_caps", []):
+            if re.search(t["regex"], txt, re.I): tused[t["name"]] = tused.get(t["name"], 0) + 1
         used[src] = used.get(src, 0) + 1; picked.append(r)
         if len(picked) >= CFG["headline_top_n"]: break
     return [{"gid": r[1]["gid"], "score": r[0], "n": r[2], "nsrc": r[3], "age": round(r[4], 2)} for r in picked]
@@ -548,7 +573,7 @@ def demo_items():
     return out
 
 def to_record(it, i):
-    return {"id": i, "gid": it["gid"], "src": it["src"], "dept": it["dept"],
+    return {"id": i, "gid": it["gid"], "src": it["src"], "dept": it["dept"], "dept_en": CFG.get("dept_en", {}).get(it["dept"], ""),
             "t": it["title"], "zh": it.get("zh") or (it["title"] if has_cjk(it["title"]) else ""), "en": it.get("en") or (it["title"] if not has_cjk(it["title"]) else ""), "url": it.get("link", it["url"]), "ts": it["dt"].strftime("%Y-%m-%d %H:%M"),
             "d": it["dt"].strftime("%Y-%m-%d"), "wk": "周" + WEEK[it["dt"].weekday()], "tags": it["tags"]}
 

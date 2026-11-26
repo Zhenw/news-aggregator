@@ -338,5 +338,17 @@
  "alt_match_lo": 0.2,
  "verify_model": "Qwen/Qwen3-8B",
  "impact_model": "Qwen/Qwen3-8B",
- "impact_max_items": 70
+ "impact_max_items": 70,
+ "dept_en": {
+  "财政部": "the Ministry of Finance",
+  "商务部": "the Ministry of Commerce",
+  "外交部": "the Ministry of Foreign Affairs"
+ },
+ "headline_topic_caps": [
+  {
+   "name": "tariff",
+   "regex": "tariff|关税",
+   "max": 2
+  }
+ ]
 }
