@@ -73,6 +73,9 @@ button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .ic .ib:after{content:"";position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--muted)}
 .ic .ib i{position:absolute;top:0;bottom:0;border-radius:3px}.ic.up .ib i{background:#d9363e}.ic.dn .ib i{background:#1d9e75}
 .ic .ir{font-size:12px}.ic .ir2{font-size:12px;color:var(--muted);margin-top:2px}
+.iflag{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+.iflag span{font-size:11px;border-radius:8px;padding:0 6px;border:1px solid var(--line);color:var(--muted)}
+.iflag .wk{color:#b7791f;border-color:rgba(183,121,31,.5)}
 #imp .dis{color:var(--muted);font-size:11px;margin-top:8px}
 #imp{scroll-margin-top:210px}
 @media(max-width:640px){#imp{scroll-margin-top:100px}}
@@ -119,7 +122,7 @@ button.on{background:var(--accent);border-color:var(--accent);color:#fff}
 </header>
 <div id="bar" hidden><button id="pprev" aria-label="上一条">⏮</button><button id="pplay" aria-label="暂停">⏸</button><button id="pnext" aria-label="下一条">⏭</button><div class="tx"><b id="pt"></b><span class="sub" id="ps"></span></div><button id="pstop" aria-label="停止">✕</button></div>
 <main>
-  <section id="imp" hidden><h2>📊 品种影响指数 <span class="sub" id="impsub"></span> <button id="impgb" class="chip">关系图</button></h2><div class="sm" id="impsum"></div><div class="impfoc" id="impfoc" hidden><span></span><button id="impfocx" class="chip">清除高亮</button></div><div id="implist"></div><div id="impg" hidden></div><div class="dis">由 AI 仅依据近 24 小时新闻标题自动打分(-5 利空 ~ +5 利好,红=利好、绿=利空),只反映消息面方向,不是价格预测,不构成投资建议。</div></section>
+  <section id="imp" hidden><h2>📊 品种影响指数 <span class="sub" id="impsub"></span> <button id="impgb" class="chip">关系图</button></h2><div class="sm" id="impsum"></div><div class="impfoc" id="impfoc" hidden><span></span><button id="impfocx" class="chip">清除高亮</button></div><div id="implist"></div><div id="impg" hidden></div><div class="dis">由 AI 仅依据近 24 小时新闻标题自动打分(同一批新闻多次打分取中位数)(-5 利空 ~ +5 利好,红=利好、绿=利空),只反映消息面方向,不是价格预测,不构成投资建议。</div></section>
   <section class="hl" id="hl" hidden><h2>🔥 今日头条 <span class="sub" id="hlsub"></span></h2><ol id="hllist"></ol><button id="hlmore" class="chip" hidden></button></section>
   <div id="list"></div>
 </main>
@@ -222,6 +225,12 @@ function impTags(gid){
   const a=EVMAP.get(gid); if(!a) return '';
   return '<span class="itags">'+a.map(x=>'<button class="itag '+(x.d>0?'up':'dn')+'" data-hg="'+gid+'" title="在顶部面板高亮受影响的品种">'+esc(x.name)+(x.d>0?' ▲':' ▼')+'</button>').join('')+'</span>';
 }
+function flags(x){
+  const a=[];
+  if(x.weak) a.push('<span class="wk" title="只有一条依据,或多次打分结果不一致,仅供参考">⚠ 弱依据</span>');
+  if(x.runs>1&&x.agree<x.runs) a.push('<span title="多次打分里方向一致的次数">一致 '+x.agree+'/'+x.runs+'</span>');
+  return a.length?'<div class="iflag">'+a.join('')+'</div>':'';
+}
 function renderImpact(){
   const box=document.getElementById('imp');
   if(!IMP||!IMP.items||!IMP.items.length){box.hidden=true;return;}
@@ -229,12 +238,12 @@ function renderImpact(){
   const by=new Map(DATA.map(i=>[i.gid,i]));
   EVMAP.clear();
   IMP.items.forEach(x=>(x.ev||[]).forEach(e=>{if(!by.has(e.g))return;if(!EVMAP.has(e.g))EVMAP.set(e.g,[]);EVMAP.get(e.g).push({k:x.k,name:x.name,d:e.d,w:e.w});}));
-  document.getElementById('impsub').textContent=IMP.built+' · 基于 '+IMP.n+' 条';
+  document.getElementById('impsub').textContent=IMP.built+' · 基于 '+IMP.n+' 条'+(IMP.runs>1?' · '+IMP.runs+' 次打分取中位数':'');
   document.getElementById('impsum').textContent=(IMP.summary||'')+((bilingual&&IMP.summary_en)?' / '+IMP.summary_en:'');
   const lab=s=>s>=3?'强烈利好':s>=1?'偏利好':s<=-3?'强烈利空':s<=-1?'偏利空':'中性';
   document.getElementById('implist').innerHTML=IMP.items.map(x=>{
     const s=x.score,cls=s>0?'up':s<0?'dn':'ne',w=Math.abs(s)*10,ev=(x.ev||[]).filter(e=>by.has(e.g)),open=OPENEV.has(x.k);
-    return '<div class="ic '+cls+(open?' open':'')+'" data-k="'+esc(x.k)+'"><div class="in">'+esc(x.name)+'<small>'+esc(x.k)+'</small></div><div class="iv">'+(s>0?'+':'')+s+'<span>'+lab(s)+'</span><span class="dl"></span></div><div class="ib"><i style="width:'+w+'%;'+(s<0?'right:50%':'left:50%')+'"></i></div><div class="ir">'+esc(x.zh)+'</div>'+((bilingual&&x.en)?'<div class="ir2">'+esc(x.en)+'</div>':'')
+    return '<div class="ic '+cls+(open?' open':'')+'" data-k="'+esc(x.k)+'"><div class="in">'+esc(x.name)+'<small>'+esc(x.k)+'</small></div><div class="iv">'+(s>0?'+':'')+s+'<span>'+lab(s)+'</span><span class="dl"></span></div><div class="ib"><i style="width:'+w+'%;'+(s<0?'right:50%':'left:50%')+'"></i></div><div class="ir">'+esc(x.zh)+'</div>'+((bilingual&&x.en)?'<div class="ir2">'+esc(x.en)+'</div>':'')+flags(x)
       +(ev.length?'<button class="evb" data-k="'+esc(x.k)+'">依据 '+ev.length+' 条 '+(open?'▴':'▾')+'</button><ul class="evl">'+ev.map(e=>{const i=by.get(e.g);return '<li><span class="d" style="background:'+(e.d>0?'#d9363e':'#1d9e75')+'"></span><span><a href="'+esc(i.url)+'" target="_blank" rel="noopener noreferrer">'+esc(i.zh||i.en||i.t)+'</a> <span class="s">'+esc(SRC[i.src]?.label||i.src)+'</span></span></li>';}).join('')+'</ul>':'<div class="noev">无直接依据</div>')+'</div>';
   }).join('');
   document.querySelectorAll('#implist .evb').forEach(b=>b.onclick=()=>{const k=b.dataset.k;OPENEV.has(k)?OPENEV.delete(k):OPENEV.add(k);renderImpact();});

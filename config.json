@@ -350,5 +350,6 @@
    "regex": "tariff|关税",
    "max": 2
   }
- ]
+ ],
+ "impact_runs": 3
 }

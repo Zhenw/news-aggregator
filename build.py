@@ -509,45 +509,76 @@ def make_impact(items, headline, demo=False):
               "每个品种最多4条,score 不为0时至少1条,不得引用无关新闻。\n"
               "只输出JSON对象,格式:{\"summary_zh\":\"...\",\"summary_en\":\"...\",\"items\":{\"USOIL\":{\"score\":0,\"zh\":\"...\",\"en\":\"...\",\"ev\":[{\"n\":1,\"d\":1,\"w\":2}]},...}},"
               "items 必须包含这些键:" + keys + "。\n新闻标题:\n" + "\n".join(lines))
-    attempts = [(CFG.get("impact_model") or None, {"enable_thinking": False, "temperature": 0.1, "max_tokens": 2500}), (None, {"temperature": 0.1, "max_tokens": 2500})]
-    for model, extra in attempts:
-        try:
-            out = _chat(prompt, model, extra)
-            j = json.loads(re.search(r"\{.*\}", out, re.S).group(0))
-            res = []
-            for k, zh_name, en_name in IMPACT_INST:
-                x = j["items"][k]
-                sc = max(-5, min(5, int(round(float(x["score"])))))
-                zh = str(x.get("zh", "")).strip(); en = str(x.get("en", "")).strip()
-                if not has_cjk(zh): zh = ""
-                if has_cjk(en): en = ""
-                ev, seen, dropped = [], set(), 0
-                for e in (x.get("ev") or [])[:6]:       # 依据:编号必须存在,方向只取正负号,权重限制在 1~3
-                    try:
-                        n = int(e["n"]); d = 1 if float(e["d"]) > 0 else -1; w = max(1, min(3, int(round(float(e.get("w", 1))))))
-                    except Exception: continue
-                    if not (1 <= n <= len(picked)) or n in seen: continue
-                    seen.add(n); it = picked[n - 1]
-                    if not _REL_RE[k].search(it["title"] + " " + it.get("zh", "")):   # 关联度过滤:标题与该品种无关
-                        dropped += 1; continue
-                    ev.append({"g": it["gid"], "d": d, "w": w})
-                ev = ev[:4]
-                note = ""
-                if sc != 0 and not ev:                  # 没有(相关)依据的分数不展示:归零
-                    sc, note = 0, "没有直接相关的新闻依据"
-                elif sc != 0 and sc * sum(e["d"] * e["w"] for e in ev) < 0:     # 分数方向与依据方向矛盾:归零
-                    sc, note = 0, "依据方向与判断矛盾,按中性处理"
-                elif sc != 0 and abs(sc) > sum(e["w"] for e in ev):           # 分数不能超过依据所能支撑的强度
-                    sc = (1 if sc > 0 else -1) * sum(e["w"] for e in ev)
-                if dropped: print("[impact] %s 丢弃 %d 条不相关依据" % (k, dropped))
-                if note: zh, en = note, "No directly relevant evidence" if "没有" in note else "Evidence conflicts with the call; treated as neutral"
-                res.append({"k": k, "name": zh_name, "name_en": en_name, "score": sc, "zh": zh, "en": en, "ev": ev})
-            sz, se = str(j.get("summary_zh", "")).strip(), str(j.get("summary_en", "")).strip()
-            return {"built": NOW.strftime("%Y-%m-%d %H:%M"), "n": len(picked), "items": res,
-                    "summary": sz if has_cjk(sz) else "", "summary_en": se if not has_cjk(se) else ""}
-        except Exception as e:
-            print("[impact fail]", (model or "default"), str(e)[:80])
-    return None
+    def one(model, extra):                              # 单次打分:解析 + 依据校验 + 一致性规整
+        out = _chat(prompt, model, extra)
+        j = json.loads(re.search(r"\{.*\}", out, re.S).group(0))
+        res = {}
+        for k, zh_name, en_name in IMPACT_INST:
+            x = j["items"][k]
+            sc = max(-5, min(5, int(round(float(x["score"])))))
+            zh = str(x.get("zh", "")).strip(); en = str(x.get("en", "")).strip()
+            if not has_cjk(zh): zh = ""
+            if has_cjk(en): en = ""
+            ev, seen, dropped = [], set(), 0
+            for e in (x.get("ev") or [])[:6]:           # 依据:编号必须存在,方向只取正负号,权重限制在 1~3
+                try:
+                    n = int(e["n"]); d = 1 if float(e["d"]) > 0 else -1; w = max(1, min(3, int(round(float(e.get("w", 1))))))
+                except Exception: continue
+                if not (1 <= n <= len(picked)) or n in seen: continue
+                seen.add(n); it = picked[n - 1]
+                if not _REL_RE[k].search(it["title"] + " " + it.get("zh", "")):   # 关联度过滤:标题与该品种无关
+                    dropped += 1; continue
+                ev.append({"g": it["gid"], "d": d, "w": w})
+            ev = ev[:4]
+            res[k] = _impact_fix(sc, ev, zh, en, zh_name, en_name, k, dropped)
+        sz, se = str(j.get("summary_zh", "")).strip(), str(j.get("summary_en", "")).strip()
+        return res, (sz if has_cjk(sz) else ""), (se if not has_cjk(se) else "")
+
+    runs, n_want = [], max(1, int(CFG.get("impact_runs", 3)))
+    for r in range(n_want):                             # 同一批新闻打多次,取中位数,减小单次随机波动
+        temp = 0.1 if r == 0 else 0.5
+        for model in (CFG.get("impact_model") or None, None):
+            extra = {"enable_thinking": False, "temperature": temp, "max_tokens": 2500} if model else {"temperature": temp, "max_tokens": 2500}
+            try:
+                runs.append(one(model, extra)); break
+            except Exception as e:
+                print("[impact fail] run", r + 1, (model or "default"), str(e)[:80])
+    if not runs: return None
+    res = []
+    for k, zh_name, en_name in IMPACT_INST:
+        rs = [x[0][k] for x in runs]
+        sc_all = sorted(x["score"] for x in rs); m = len(sc_all)
+        med = sc_all[m // 2] if m % 2 else min(sc_all[m // 2 - 1: m // 2 + 1], key=abs)      # 偶数次取离 0 更近的一个,偏保守
+        sgn = lambda v: (v > 0) - (v < 0)
+        agree = [x for x in rs if sgn(x["score"]) == sgn(med)]
+        freq = {}
+        for x in agree:
+            for e in x["ev"]:
+                f = freq.setdefault(e["g"], {"n": 0, "d": 0, "w": 0}); f["n"] += 1; f["d"] += e["d"]; f["w"] += e["w"]
+        pool_ev = [(g, f) for g, f in freq.items() if f["n"] >= 2] if m >= 3 else []
+        if not pool_ev: pool_ev = list(freq.items())
+        pool_ev.sort(key=lambda gf: (-gf[1]["n"], -gf[1]["w"]))
+        ev = [{"g": g, "d": 1 if f["d"] > 0 else -1, "w": max(1, min(3, round(f["w"] / f["n"])))} for g, f in pool_ev[:4]] if med != 0 else []
+        pick = next((x for x in agree if x["score"] == med and x["zh"]), None) or next((x for x in agree if x["zh"]), None) or rs[0]
+        fixed = _impact_fix(med, ev, pick["zh"], pick["en"], zh_name, en_name, k, 0)
+        fixed["runs"] = m; fixed["agree"] = len(agree)
+        fixed["weak"] = bool(fixed["score"] != 0 and (len(fixed["ev"]) <= 1 or len(agree) * 3 < m * 2))   # 只有一条依据,或不到 2/3 的运行一致
+        res.append(fixed)
+    base = runs[0]
+    print("[impact] %d runs, spread %s" % (len(runs), {x["k"]: sorted(r[0][x["k"]]["score"] for r in runs) for x in res}))
+    return {"built": NOW.strftime("%Y-%m-%d %H:%M"), "n": len(picked), "items": res, "runs": len(runs), "summary": base[1], "summary_en": base[2]}
+
+def _impact_fix(sc, ev, zh, en, zh_name, en_name, k, dropped):
+    note = ""
+    if sc != 0 and not ev:                          # 没有(相关)依据的分数不展示:归零
+        sc, note = 0, "没有直接相关的新闻依据"
+    elif sc != 0 and sc * sum(e["d"] * e["w"] for e in ev) < 0:      # 分数方向与依据方向矛盾:归零
+        sc, note = 0, "依据方向与判断矛盾,按中性处理"
+    elif sc != 0 and abs(sc) > sum(e["w"] for e in ev):             # 分数不能超过依据所能支撑的强度
+        sc = (1 if sc > 0 else -1) * sum(e["w"] for e in ev)
+    if dropped: print("[impact] %s 丢弃 %d 条不相关依据" % (k, dropped))
+    if note: zh, en = note, ("No directly relevant evidence" if "没有" in note else "Evidence conflicts with the call; treated as neutral")
+    return {"k": k, "name": zh_name, "name_en": en_name, "score": sc, "zh": zh, "en": en, "ev": ev}
 
 # ---------- 输出 ----------
 DEMO_EN = {"财政部等五部门印发《常态化帮扶资金绩效评价办法》": "Five ministries issue measures on performance evaluation of regular assistance funds",
