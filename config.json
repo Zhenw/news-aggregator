@@ -312,6 +312,26 @@
   {
    "name": "CNBC",
    "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114"
+  },
+  {
+   "name": "纽约时报",
+   "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+  },
+  {
+   "name": "纽约时报",
+   "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml"
+  },
+  {
+   "name": "卫报",
+   "url": "https://www.theguardian.com/us-news/rss"
+  },
+  {
+   "name": "BBC",
+   "url": "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml"
+  },
+  {
+   "name": "CNBC",
+   "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"
   }
  ],
  "alt_match_hi": 0.3,
