@@ -237,12 +237,25 @@ def _article_text(url):
     return desc, body
 
 def _chat(prompt):
+    """调用 OpenAI 兼容接口(OpenAI / Gemini 兼容端点均可)。空环境变量视为未设置;遇到 429/5xx 自动退避重试。"""
+    import time
     key = os.environ["OPENAI_API_KEY"]
-    base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    body = json.dumps({"model": os.environ.get("TRANSLATE_MODEL", "gpt-4o-mini"),
-                       "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}).encode()
-    req = urllib.request.Request(base + "/chat/completions", body, {"Content-Type": "application/json", "Authorization": "Bearer " + key})
-    return json.load(urllib.request.urlopen(req, timeout=60))["choices"][0]["message"]["content"].strip()
+    base = (os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
+    model = os.environ.get("TRANSLATE_MODEL") or "gpt-4o-mini"
+    body = json.dumps({"model": model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}).encode()
+    last = None
+    for attempt in range(4):
+        req = urllib.request.Request(base + "/chat/completions", body, {"Content-Type": "application/json", "Authorization": "Bearer " + key})
+        try:
+            out = json.load(urllib.request.urlopen(req, timeout=90))["choices"][0]["message"]["content"].strip()
+            time.sleep(1.5)                                  # 免费层有每分钟请求数限制,轻微限速
+            return out
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code in (429, 500, 502, 503, 504) and attempt < 3:
+                time.sleep(8 * (attempt + 1)); continue
+            raise
+    raise last
 
 def _cut(t, n):
     t = re.sub(r"\s+", " ", t).strip()
