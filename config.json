@@ -264,5 +264,12 @@
  },
  "junk_title_regex": "^(图说|图解|商务预报|商务要闻|要闻|公告|通知|更多|首页)$",
  "low_value_regex": "例行记者会|商务预报|图说|图解|工作动态",
- "low_value_factor": 0.5
+ "low_value_factor": 0.5,
+ "desc_feeds": [
+  "https://feeds.bloomberg.com/markets/news.rss",
+  "https://feeds.bloomberg.com/politics/news.rss",
+  "https://feeds.bloomberg.com/technology/news.rss",
+  "https://feeds.bloomberg.com/business/news.rss",
+  "https://feeds.bloomberg.com/economics/news.rss"
+ ]
 }

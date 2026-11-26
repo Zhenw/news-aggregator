@@ -263,6 +263,44 @@ def _cut(t, n):
     seg = t[:n]; k = max(seg.rfind("。"), seg.rfind(". "), seg.rfind("!"), seg.rfind("?"))
     return seg[:k + 1] if k > n * 0.4 else seg.rstrip() + "…"
 
+def _good(t, n=None):
+    """正文是否足够长:中文 >=40 字,英文 >=60 字符。网站标语、栏目名之类的短文本不算。"""
+    t = (t or "").strip()
+    return len(t) >= (n or (40 if has_cjk(t) else 60))
+
+def fetch_desc_feeds():
+    """官方 RSS 自带正文摘要(例如 Bloomberg 各栏目)。只用来补充摘要,不新增条目。"""
+    out = {}
+    for url in CFG.get("desc_feeds", []):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
+            root = ET.fromstring(urllib.request.urlopen(req, timeout=20).read())
+            n = 0
+            for el in root.iter("item"):
+                f = {strip_ns(c.tag): c for c in el}
+                t = clean_title((f["title"].text or "") if "title" in f else "")
+                dsc = clean_desc(f["description"].text if "description" in f and f["description"].text else "", t)
+                if t and dsc: out[norm(t)[:80]] = dsc; n += 1
+            print(f"[ok]   desc feed {url.split('/')[-3] if url.count('/')>3 else url}: {n}")
+        except Exception as e:
+            print("[desc feed fail]", url, str(e)[:60])
+    return out
+
+def attach_descs(items):
+    """把官方摘要按标题匹配到条目上;摘要缓存在 gist_cache.json(随 Actions 缓存保留),这样已经滑出 RSS 的旧条目也还能用。"""
+    cache = json.loads(GIST_F.read_text(encoding="utf-8")) if GIST_F.exists() else {}
+    for k, v in fetch_desc_feeds().items():
+        cache.pop("desc:" + k, None); cache["desc:" + k] = v
+    keys = [k for k in cache if k.startswith("desc:")]
+    for k in keys[:-800]: del cache[k]
+    GIST_F.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+    hit = 0
+    for it in items:
+        if not it.get("desc"):
+            v = cache.get("desc:" + norm(it["title"])[:80])
+            if v: it["desc"] = v; hit += 1
+    print(f"attached official summaries to {hit} items")
+
 def make_gists(headline, items, demo=False):
     """TOP10 双语大意:gist(中文) + gist_en(英文)。没有足够原文时不让模型编造。"""
     by = {i["gid"]: i for i in items}
@@ -275,24 +313,25 @@ def make_gists(headline, items, demo=False):
             h["gist"] = "这是演示数据的大意:" + (it.get("zh") or it["title"]) + "。真实运行时这里会是根据原文提炼的两三句话摘要。"
             h["gist_en"] = "Demo summary: " + (it.get("en") or it["title"]) + ". In a real run this is a two-to-three sentence summary of the article."
             continue
-        ck = h["gid"] + ":v2"
+        ck = h["gid"] + ":v3"
         if ck in cache: h.update(cache[ck]); continue
         g = {"gist": "", "gist_en": ""}
         desc = body = ""
         try: desc, body = _article_text(it.get("link", it["url"]))
         except Exception as e: print("[gist fetch fail]", (it.get("zh") or it["title"])[:30], str(e)[:50])
-        text = (desc + " " + body).strip() or it.get("desc", "")
-        if has_key and len(text) >= 80:
+        text = (desc + " " + body).strip()
+        if not _good(text): text = it.get("desc", "")      # 原文抓不到/太短时,用官方 RSS 摘要
+        if has_key and _good(text):
             try:
                 out = _chat("根据下面这条新闻的标题和正文片段,分别写中文和英文各2到3句话的大意(中文80到140字;英文40到70词),适合语音播报。"
-                            "不要出现链接和特殊符号,不要编造原文没有的信息。只输出JSON对象:{\"zh\":\"...\",\"en\":\"...\"}。\n"
+                            "不要出现链接和特殊符号,不要编造原文没有的信息;信息不足时宁可写短一些,只概括已有信息。只输出JSON对象:{\"zh\":\"...\",\"en\":\"...\"}。\n"
                             "标题:" + it["title"] + "\n正文片段:" + text[:1500])
                 j = json.loads(re.search(r"\{.*\}", out, re.S).group(0))
                 g = {"gist": (j.get("zh") or "").strip(), "gist_en": (j.get("en") or "").strip()}
             except Exception as e: print("[gist llm fail]", str(e)[:60])
             if re.search(r"无法|没有提供|不足以|抱歉|I'm sorry|I cannot|unable to (?:summar|provide)", g["gist"] + " " + g["gist_en"], re.I):
                 g = {"gist": "", "gist_en": ""}
-        if not (g["gist"] or g["gist_en"]) and text:        # 没有 Key:用原文摘要,语言不翻译
+        if not (g["gist"] or g["gist_en"]) and _good(text):        # 没有 Key:用原文摘要,语言不翻译
             if has_cjk(text): g["gist"] = _cut(desc or text, 140)
             else: g["gist_en"] = _cut(desc or text, 260)
         h.update(g)
@@ -341,6 +380,7 @@ def main():
         items = translate(items)
         if "--no-resolve" not in sys.argv: items = resolve_links(items)
     for i in items: i["tags"] = tag_item(i)
+    if not demo: attach_descs(items)
     headline = make_gists(build_headline(items), items, demo)
     data = [to_record(it, n) for n, it in enumerate(items)]
     tags = [{"k": k, "c": v["color"]} for k, v in CFG["tags"].items()] + [{"k": CFG["other_tag"]["name"], "c": CFG["other_tag"]["color"]}]
