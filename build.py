@@ -437,6 +437,22 @@ def make_gists(headline, items, demo=False):
 IMPACT_INST = [("USOIL", "美国原油", "US Crude Oil"), ("XAUUSD", "黄金", "Gold"), ("BTCUSD", "比特币", "Bitcoin"),
                ("US500", "标普500", "S&P 500"), ("HK50", "恒生指数", "Hang Seng"), ("SSE", "上证指数", "Shanghai Composite")]
 
+# 依据关联度过滤:每个品种只认与它有关的关键词(英文用原标题,中文用译文/原文),模型引用了不相关的新闻会被丢弃
+_M_RATES = r"\bfed\b|federal reserve|powell|fomc|interest rates?|rate (?:hike|cut)s?|inflation|\bcpi\b|\bpce\b|treasury|bond yields?|dollar|\bgdp\b|payrolls?|recession|美联储|鲍威尔|加息|降息|利率|通胀|美元|国债|收益率|衰退|非农"
+_M_TRADE = r"tariffs?|trade (?:war|deal|truce|talks)|export controls?|chip curbs?|sanctions?|关税|贸易战|贸易协议|出口管制|制裁|芯片限制"
+_M_GEO = r"\bwar\b|missiles?|nuclear|attacks?|strikes?|ukraine|russia|israel|iran|houthi|red sea|middle east|战争|导弹|核武|袭击|乌克兰|俄罗斯|以色列|伊朗|胡塞|红海|中东"
+_M_RISK = r"stocks?|equit(?:y|ies)|nasdaq|s&p|wall street|sell-?off|rout|rally|\bai\b|nvidia|volatility|risk appetite|credit|股市|股票|纳斯达克|标普|抛售|人工智能|英伟达|波动|风险偏好|信用"
+_M_TECH = r"\bai\b|tech|chips?|semiconductor|nvidia|科技|芯片|半导体|人工智能|英伟达"
+IMPACT_REL = {
+    "USOIL": r"\boil\b|crude|\bopec\b|brent|\bwti\b|refiner|gasoline|diesel|pipeline|tanker|hormuz|saudi|energy|shipping|原油|石油|油价|炼油|能源|沙特|油轮|霍尔木兹|" + "|".join([_M_GEO, _M_TRADE, _M_RATES]),
+    "XAUUSD": r"\bgold\b|bullion|silver|precious|safe[- ]haven|黄金|金价|贵金属|避险|" + "|".join([_M_RATES, _M_GEO, _M_TRADE]),
+    "BTCUSD": r"bitcoin|crypto|stablecoin|\bbtc\b|ether(?:eum)?|digital assets?|比特币|加密|数字资产|稳定币|" + "|".join([_M_RATES, _M_RISK, _M_TRADE]),
+    "US500": r"earnings|profits?|guidance|economy|economic|retail|consumer|jobs|美国经济|财报|盈利|消费|经济|" + "|".join([_M_RISK, _M_RATES, _M_TRADE, _M_GEO]),
+    "HK50": r"hong kong|hang seng|china|chinese|beijing|\bxi\b|yuan|renminbi|alibaba|tencent|xiaomi|byd|huawei|asia|asian|港|恒生|中国|北京|人民币|阿里|腾讯|华为|亚洲|" + "|".join([_M_TRADE, _M_RATES, _M_TECH]),
+    "SSE": r"china|chinese|beijing|shanghai|\bxi\b|yuan|renminbi|pboc|csrc|mofcom|a-shares?|商务部|中国|北京|上海|人民币|央行|证监会|A股|财政部|国务院|" + "|".join([_M_TRADE, _M_RATES, _M_TECH]),
+}
+_REL_RE = {k: re.compile(v, re.I) for k, v in IMPACT_REL.items()}
+
 def make_impact(items, headline, demo=False):
     if demo or not os.environ.get("OPENAI_API_KEY"): return None
     hg = {h["gid"] for h in headline}
@@ -480,16 +496,26 @@ def make_impact(items, headline, demo=False):
                 zh = str(x.get("zh", "")).strip(); en = str(x.get("en", "")).strip()
                 if not has_cjk(zh): zh = ""
                 if has_cjk(en): en = ""
-                ev, seen = [], set()
+                ev, seen, dropped = [], set(), 0
                 for e in (x.get("ev") or [])[:6]:       # 依据:编号必须存在,方向只取正负号,权重限制在 1~3
                     try:
                         n = int(e["n"]); d = 1 if float(e["d"]) > 0 else -1; w = max(1, min(3, int(round(float(e.get("w", 1))))))
                     except Exception: continue
                     if not (1 <= n <= len(picked)) or n in seen: continue
-                    seen.add(n); ev.append({"g": picked[n - 1]["gid"], "d": d, "w": w})
+                    seen.add(n); it = picked[n - 1]
+                    if not _REL_RE[k].search(it["title"] + " " + it.get("zh", "")):   # 关联度过滤:标题与该品种无关
+                        dropped += 1; continue
+                    ev.append({"g": it["gid"], "d": d, "w": w})
                 ev = ev[:4]
-                if sc != 0 and not ev:                  # 没有依据的分数不展示:归零
-                    sc = 0
+                note = ""
+                if sc != 0 and not ev:                  # 没有(相关)依据的分数不展示:归零
+                    sc, note = 0, "没有直接相关的新闻依据"
+                elif sc != 0 and sc * sum(e["d"] * e["w"] for e in ev) < 0:     # 分数方向与依据方向矛盾:归零
+                    sc, note = 0, "依据方向与判断矛盾,按中性处理"
+                elif sc != 0 and abs(sc) > sum(e["w"] for e in ev):           # 分数不能超过依据所能支撑的强度
+                    sc = (1 if sc > 0 else -1) * sum(e["w"] for e in ev)
+                if dropped: print("[impact] %s 丢弃 %d 条不相关依据" % (k, dropped))
+                if note: zh, en = note, "No directly relevant evidence" if "没有" in note else "Evidence conflicts with the call; treated as neutral"
                 res.append({"k": k, "name": zh_name, "name_en": en_name, "score": sc, "zh": zh, "en": en, "ev": ev})
             sz, se = str(j.get("summary_zh", "")).strip(), str(j.get("summary_en", "")).strip()
             return {"built": NOW.strftime("%Y-%m-%d %H:%M"), "n": len(picked), "items": res,
