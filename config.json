@@ -94,6 +94,21 @@
    "src": "cnstock",
    "name": "证券时报 (via Google News)",
    "url": "https://news.google.com/rss/search?q=%E8%AF%81%E5%88%B8%E6%97%B6%E6%8A%A5+when:1d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+  },
+  {
+   "src": "cnstock",
+   "name": "财联社 (via Google News)",
+   "url": "https://news.google.com/rss/search?q=%E8%B4%A2%E8%81%94%E7%A4%BE+when:1d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+  },
+  {
+   "src": "cnstock",
+   "name": "第一财经 (via Google News)",
+   "url": "https://news.google.com/rss/search?q=%E7%AC%AC%E4%B8%80%E8%B4%A2%E7%BB%8F+when:1d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+  },
+  {
+   "src": "cnstock",
+   "name": "财新 (via Google News)",
+   "url": "https://news.google.com/rss/search?q=%E8%B4%A2%E6%96%B0+when:1d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
   }
  ],
  "tags": {
