@@ -503,6 +503,8 @@ _EQ_NEG = (r"tariffs?\s+(?:hikes?|raise\w*|threats?|target\w*|levies|plans?|on|a
 _EQ_POS = (r"\brall(?:y|ies|ied)\b|rebound\w*|bounce\w*|\bgains?\b|record high|\bsurge[sd]?\b|\bsoar\w*|rate cuts?|cuts? rates|dovish|truce|trade (?:deal|pact|agreement)|stimulus|easing"
            r"|tariff (?:cut|relief|exemption)|not as dire|lifts? (?:sanctions|curbs|restrictions)|eases? (?:sanctions|curbs|export)|removed? from (?:the )?(?:sanctions|entity) list"
            r"|反弹|大涨|降息|刺激|停战|贸易协议|宽松|鸽派|降低关税|取消关税|移出|解除|豁免|放宽|取消制裁")
+_CN_POS = r"齐涨|涨停|收涨|领涨|大涨|上涨|上扬|走高|高开|反弹|飙升|拉升|涨\d|流入|净流入|利好|降准|降息|宽松|提振|政策支持|扶持"
+_CN_NEG = r"齐跌|跌停|收跌|领跌|大跌|暴跌|下跌|下挫|走低|低开|回落|跌\d|流出|净流出|抛售|利空|收紧|制裁"
 _CHINA = r"hong kong|hang seng|china|chinese|beijing|\bxi\b|yuan|renminbi|alibaba|tencent|xiaomi|byd|huawei|港股|恒生|中国|北京|人民币|阿里|腾讯|华为"
 IMPACT_SPEC = {
     "USOIL": dict(strong=r"\boil\b|crude|\bopec\b|brent|\bwti\b|refiner|gasoline|diesel|pipeline|tanker|原油|石油|油价|炼油|油轮|欧佩克",
@@ -521,8 +523,8 @@ IMPACT_SPEC = {
                   macro=r"\bfed\b|federal reserve|powell|interest rates?|rate (?:hike|cut)s?|inflation|tariffs?|trade (?:war|deal|truce)|earnings|recession|美联储|加息|降息|通胀|关税|财报|衰退",
                   pos=_EQ_POS, neg=_EQ_NEG),
     "HK50": dict(strong=_CHINA, macro=r"tariffs?|chip curbs?|export controls?|关税|芯片限制|出口管制", pos=_EQ_POS, neg=_EQ_NEG),
-    "SSE": dict(strong=r"china|chinese|beijing|shanghai|\bxi\b|yuan|renminbi|pboc|csrc|mofcom|a-shares?|商务部|中国|北京|上海|央行|证监会|A股|财政部|国务院|人民币",
-                macro=r"tariffs?|chip curbs?|export controls?|关税|芯片限制|出口管制", pos=_EQ_POS + r"|支持|促进|扩大开放", neg=_EQ_NEG),
+    "SSE": dict(strong=r"china|chinese|beijing|shanghai|\bxi\b|yuan|renminbi|pboc|csrc|mofcom|a-shares?|商务部|中国|北京|上海|央行|证监会|A股|财政部|国务院|人民币|上证|沪深|深证|创业板|科创板|沪指|深成指|北向资金",
+                macro=r"tariffs?|chip curbs?|export controls?|关税|芯片限制|出口管制", pos=_EQ_POS + "|" + _CN_POS, neg=_EQ_NEG + "|" + _CN_NEG),
 }
 IMPACT_SPEC = {k: {n: re.compile(v, re.I) for n, v in d.items()} for k, d in IMPACT_SPEC.items()}
 
@@ -542,11 +544,13 @@ def make_impact(items, headline, demo=False):
     hg = {h["gid"] for h in headline}
     pool = [it for it in items if NOW - it["dt"] <= timedelta(hours=24) and not LOWV.search(it["title"] + " " + it.get("zh", ""))]
     pool.sort(key=lambda it: (it["gid"] not in hg, -it["dt"].timestamp()))
-    picked, gov = [], 0
-    for it in pool:                                   # 部委稿子多为例行通知,最多取 8 条
-        if it["src"] == "gov":
-            if gov >= 8: continue
-            gov += 1
+    picked, used_src = [], {}
+    caps = CFG.get("impact_src_caps", {"gov": 8, "cnstock": 15})   # 部委多为例行通知;中国股市条目多且琐碎,各自限额
+    for it in pool:
+        cap = caps.get(it["src"])
+        if cap is not None:
+            if used_src.get(it["src"], 0) >= cap: continue
+            used_src[it["src"]] = used_src.get(it["src"], 0) + 1
         picked.append(it)
         if len(picked) >= CFG.get("impact_max_items", 70): break
     if len(picked) < 8: return None
